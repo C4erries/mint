@@ -139,6 +139,7 @@ Makefile
 Здесь находятся адаптеры с обязательным разделением на входящие и исходящие:
 - `in/`: REST handlers (внешний frontend-вход в `core-api`), gRPC servers, Kafka consumers, webhook handlers;
 - `out/`: реализации репозиториев, Kafka producers, gRPC clients, LiveKit clients, Redis/Scylla/object storage adapters, клиенты внешних систем;
+- `di/container.go`: сборка dependency graph инфраструктурного слоя (конструкторы адаптеров/сервисов), чтобы `main.go` оставался тонким и чистым;
 - transport DTO mapping и преобразование моделей на границах адаптеров.
 
 ### 3. CQRS: фиксированные правила
