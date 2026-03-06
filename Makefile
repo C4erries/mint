@@ -11,8 +11,10 @@ GO_TEST_FLAGS ?= -count=1
 PROTOC ?= protoc
 PROTO_GO_OPTS ?= paths=source_relative
 PROTO_FILES := api/rtc/v1/query.proto api/permission/v1/permission.proto
+DOCKER_COMPOSE ?= docker compose
+RTC_COMPOSE_FILE ?= deploy/docker-compose/rtc.yml
 
-.PHONY: help test test-race lint lint-fix proto proto-check check
+.PHONY: help test test-race lint lint-fix proto proto-check check rtc-up rtc-down rtc-smoke
 
 help:
 	@echo "Targets:"
@@ -22,6 +24,9 @@ help:
 	@echo "  make lint-fix   - run golangci-lint with auto-fixes"
 	@echo "  make proto      - generate Go code from proto files"
 	@echo "  make proto-check- verify proto-generated files are up to date"
+	@echo "  make rtc-up     - start RTC docker stack"
+	@echo "  make rtc-down   - stop RTC docker stack"
+	@echo "  make rtc-smoke  - run RTC smoke tests (requires docker stack)"
 	@echo "  make check      - run test + lint"
 
 test:
@@ -41,5 +46,14 @@ proto:
 
 proto-check: proto
 	git diff --exit-code -- api
+
+rtc-up:
+	$(DOCKER_COMPOSE) -f $(RTC_COMPOSE_FILE) up -d
+
+rtc-down:
+	$(DOCKER_COMPOSE) -f $(RTC_COMPOSE_FILE) down
+
+rtc-smoke:
+	$(GO) test -tags smoke ./internal/rtc/smoke -count=1 -v
 
 check: test lint

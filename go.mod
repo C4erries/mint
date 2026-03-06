@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/gin-gonic/gin v1.11.0
 	github.com/gocql/gocql v1.17.2
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/livekit/protocol v1.44.1-0.20260223055551-e05f7b7a6146
 	github.com/livekit/server-sdk-go/v2 v2.15.0
@@ -12,6 +13,7 @@ require (
 	github.com/scylladb/gocqlx/v3 v3.0.4
 	github.com/segmentio/kafka-go v0.4.50
 	github.com/stretchr/testify v1.11.1
+	golang.org/x/crypto v0.48.0
 	google.golang.org/grpc v1.79.2
 	google.golang.org/protobuf v1.36.11
 )
@@ -108,7 +110,6 @@ require (
 	go.uber.org/zap v1.27.1 // indirect
 	go.uber.org/zap/exp v0.3.0 // indirect
 	golang.org/x/arch v0.20.0 // indirect
-	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/exp v0.0.0-20260212183809-81e46e3db34a // indirect
 	golang.org/x/mod v0.33.0 // indirect
 	golang.org/x/net v0.51.0 // indirect

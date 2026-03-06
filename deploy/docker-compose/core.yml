@@ -6,8 +6,6 @@ services:
     command:
       - redpanda
       - start
-      - --set
-      - redpanda.auto_create_topics_enabled=true
       - --overprovisioned
       - --smp
       - "1"
@@ -21,15 +19,11 @@ services:
       - --kafka-addr
       - INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:19092
       - --advertise-kafka-addr
-      - INTERNAL://redpanda:9092,EXTERNAL://localhost:${MINT_RTC_HOST_KAFKA_PORT:-19092}
-      - --pandaproxy-addr
-      - INTERNAL://0.0.0.0:8082
-      - --advertise-pandaproxy-addr
-      - INTERNAL://redpanda:8082
+      - INTERNAL://redpanda:9092,EXTERNAL://localhost:19092
     ports:
-      - "${MINT_RTC_HOST_KAFKA_PORT:-19092}:19092"
+      - "19092:19092"
     healthcheck:
-      test: ["CMD", "rpk", "cluster", "health", "--exit-when-healthy"]
+      test: ["CMD", "rpk", "cluster", "health", "--brokers=redpanda:9092"]
       interval: 10s
       timeout: 5s
       retries: 20
@@ -37,7 +31,7 @@ services:
   redis:
     image: redis:7.4-alpine
     ports:
-      - "${MINT_RTC_HOST_REDIS_PORT:-6379}:6379"
+      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -46,21 +40,49 @@ services:
 
   scylla:
     image: scylladb/scylla:6.2
-    command: ["--smp", "1", "--memory", "1G", "--overprovisioned", "1", "--developer-mode", "1", "--reactor-backend=epoll", "--api-address", "0.0.0.0"]
+    command: ["--smp", "1", "--memory", "1G", "--overprovisioned", "1", "--api-address", "0.0.0.0"]
     ports:
-      - "${MINT_RTC_HOST_SCYLLA_PORT:-9042}:9042"
+      - "9042:9042"
     healthcheck:
       test: ["CMD", "cqlsh", "-e", "DESCRIBE KEYSPACES"]
       interval: 15s
       timeout: 10s
       retries: 20
 
-  livekit:
-    image: livekit/livekit-server:v1.8.4
-    command: ["--dev", "--bind", "0.0.0.0", "--keys", "devkey:devsecret"]
+  core:
+    image: golang:1.25
+    working_dir: /workspace
+    volumes:
+      - ../../:/workspace
+    command: ["go", "run", "./cmd/core"]
+    environment:
+      MINT_CORE_HTTP_ADDR: ":8091"
+      MINT_CORE_GRPC_ADDR: ":9091"
+      MINT_KAFKA_BROKERS: "redpanda:9092"
+      MINT_CORE_WORKSPACE_COMMANDS_TOPIC: "mint.workspace.commands.v1"
+      MINT_CORE_WORKSPACE_EVENTS_TOPIC: "mint.workspace.events.v1"
+      MINT_CORE_WORKSPACE_CONSUMER_GROUP: "mint.core.workspace.v1"
+      MINT_RTC_COMMANDS_TOPIC: "mint.rtc.commands.v1"
+      MINT_REDIS_ADDR: "redis:6379"
+      MINT_REDIS_KEY_PREFIX: "mint:core"
+      MINT_SCYLLA_HOSTS: "scylla"
+      MINT_SCYLLA_KEYSPACE: "mint_core"
+      MINT_SCYLLA_AUTO_CREATE_SCHEMA: "true"
+      MINT_CORE_JWT_ACCESS_SECRET: "dev-access-secret"
+      MINT_CORE_JWT_REFRESH_SECRET: "dev-refresh-secret"
+      MINT_RTC_GRPC_ADDR: "rtc-api:9093"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      scylla:
+        condition: service_healthy
+      rtc-api:
+        condition: service_started
     ports:
-      - "${MINT_RTC_HOST_LIVEKIT_HTTP_PORT:-7880}:7880"
-      - "${MINT_RTC_HOST_LIVEKIT_RTC_PORT:-7881}:7881/udp"
+      - "8091:8091"
+      - "9091:9091"
 
   rtc-api:
     image: golang:1.25
@@ -74,9 +96,6 @@ services:
       MINT_KAFKA_BROKERS: "redpanda:9092"
       MINT_RTC_EVENTS_TOPIC: "mint.rtc.events.v1"
       MINT_RTC_COMMANDS_TOPIC: "mint.rtc.commands.v1"
-      MINT_RTC_COMMANDS_DLQ_TOPIC: "mint.rtc.commands.dlq.v1"
-      MINT_RTC_COMMAND_MAX_DISPATCH_ATTEMPTS: "3"
-      MINT_RTC_COMMAND_RETRY_BACKOFF: "200ms"
       MINT_RTC_KAFKA_CONSUMER_GROUP: "mint.rtc-api.v1"
       MINT_REDIS_ADDR: "redis:6379"
       MINT_SCYLLA_HOSTS: "scylla"
@@ -85,8 +104,7 @@ services:
       MINT_LIVEKIT_URL: "http://livekit:7880"
       MINT_LIVEKIT_API_KEY: "devkey"
       MINT_LIVEKIT_API_SECRET: "devsecret"
-      # Run permission service separately (core/workspace) and expose to Docker host on :9091.
-      MINT_PERMISSION_GRPC_ADDR: "host.docker.internal:9091"
+      MINT_PERMISSION_GRPC_ADDR: "core:9091"
       MINT_PERMISSION_TIMEOUT: "300ms"
       MINT_PERMISSION_MAX_RETRIES: "2"
       MINT_PERMISSION_RETRY_BACKOFF: "100ms"
@@ -100,5 +118,12 @@ services:
       livekit:
         condition: service_started
     ports:
-      - "${MINT_RTC_HOST_HTTP_PORT:-8093}:8093"
-      - "${MINT_RTC_HOST_GRPC_PORT:-9093}:9093"
+      - "8093:8093"
+      - "9093:9093"
+
+  livekit:
+    image: livekit/livekit-server:v1.8.4
+    command: ["--dev", "--bind", "0.0.0.0", "--keys", "devkey:devsecret"]
+    ports:
+      - "7880:7880"
+      - "7881:7881/udp"
