@@ -22,6 +22,7 @@ type Message struct {
 // Reader abstracts source of incoming command messages.
 type Reader interface {
 	Poll(ctx context.Context) (Message, error)
+	Close() error
 }
 
 // NoopReader blocks until context cancellation.
@@ -30,6 +31,10 @@ type NoopReader struct{}
 func (NoopReader) Poll(ctx context.Context) (Message, error) {
 	<-ctx.Done()
 	return Message{}, ctx.Err()
+}
+
+func (NoopReader) Close() error {
+	return nil
 }
 
 // Consumer parses Kafka envelopes and dispatches RTC commands to application layer.

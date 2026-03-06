@@ -2,10 +2,6 @@ package livekitwebhook
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"crypto/subtle"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -16,26 +12,33 @@ import (
 	"github.com/c4erries/mint/internal/rtc/application"
 	"github.com/c4erries/mint/internal/rtc/domain"
 	"github.com/c4erries/mint/pkg/id"
+	"github.com/livekit/protocol/auth"
+	"github.com/livekit/protocol/webhook"
 )
-
-const signatureHeader = "X-LiveKit-Signature"
 
 // Handler validates LiveKit webhook signature and normalizes callbacks into RTC commands.
 type Handler struct {
-	secret      []byte
+	keyProvider auth.KeyProvider
+	receive     func(r *http.Request, provider auth.KeyProvider) ([]byte, error)
 	commands    *application.CommandService
 	logger      *slog.Logger
 	now         func() time.Time
 	idGenerator func() string
 }
 
-func New(secret string, commands *application.CommandService, logger *slog.Logger) *Handler {
+func New(apiKey string, apiSecret string, commands *application.CommandService, logger *slog.Logger) *Handler {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 
+	var keyProvider auth.KeyProvider
+	if apiKey != "" && apiSecret != "" {
+		keyProvider = auth.NewSimpleKeyProvider(apiKey, apiSecret)
+	}
+
 	return &Handler{
-		secret:      []byte(secret),
+		keyProvider: keyProvider,
+		receive:     webhook.Receive,
 		commands:    commands,
 		logger:      logger,
 		now:         time.Now,
@@ -49,14 +52,8 @@ func (h *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	body, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, 1<<20))
+	body, err := h.readVerifiedBody(request)
 	if err != nil {
-		h.logger.Error("failed to read livekit webhook body", slog.String("error", err.Error()))
-		http.Error(writer, "invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	if !h.validateSignature(body, request.Header.Get(signatureHeader)) {
 		http.Error(writer, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -152,39 +149,19 @@ func (h *Handler) handleEvent(ctx context.Context, callback callbackEvent) error
 	}
 }
 
-func (h *Handler) validateSignature(body []byte, providedSignature string) bool {
-	if len(h.secret) == 0 {
-		return true
+func (h *Handler) readVerifiedBody(request *http.Request) ([]byte, error) {
+	if h.keyProvider == nil {
+		h.logger.Error("livekit webhook key provider is not configured")
+		return nil, errors.New("livekit key provider is required")
 	}
 
-	if providedSignature == "" {
-		return false
-	}
-
-	expectedMac := h.computeMac(body)
-	providedMac, err := hex.DecodeString(providedSignature)
+	body, err := h.receive(request, h.keyProvider)
 	if err != nil {
-		h.logger.Error("failed to decode livekit webhook signature", slog.String("error", err.Error()))
-		return false
+		h.logger.Error("failed to verify livekit webhook signature", slog.String("error", err.Error()))
+		return nil, err
 	}
 
-	if len(providedMac) != len(expectedMac) {
-		return false
-	}
-
-	return subtle.ConstantTimeCompare(providedMac, expectedMac) == 1
-}
-
-func (h *Handler) computeMac(body []byte) []byte {
-	mac := hmac.New(sha256.New, h.secret)
-	_, err := mac.Write(body)
-	if err != nil {
-		// hash.Hash for sha256 never returns an error, keep defensive fallback.
-		h.logger.Error("failed to compute livekit webhook signature", slog.String("error", err.Error()))
-		return nil
-	}
-
-	return mac.Sum(nil)
+	return body, nil
 }
 
 func IsDomainNotFound(err error) bool {

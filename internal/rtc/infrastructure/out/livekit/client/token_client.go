@@ -2,24 +2,63 @@ package livekitclient
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/c4erries/mint/internal/rtc/application"
 	"github.com/c4erries/mint/pkg/id"
+	"github.com/livekit/protocol/auth"
 )
 
-// TokenClient issues signed transport-agnostic tokens for RTC access.
+// AccessTokenBuilder is a test-friendly wrapper around livekit auth token builder.
+type AccessTokenBuilder interface {
+	SetIdentity(identity string) AccessTokenBuilder
+	SetVideoGrant(grant *auth.VideoGrant) AccessTokenBuilder
+	SetValidFor(duration time.Duration) AccessTokenBuilder
+	ToJWT() (string, error)
+}
+
+// AccessTokenFactory wraps livekit token constructor for easier testing.
+type AccessTokenFactory interface {
+	NewAccessToken(apiKey string, apiSecret string) AccessTokenBuilder
+}
+
+type defaultAccessTokenFactory struct{}
+
+func (defaultAccessTokenFactory) NewAccessToken(apiKey string, apiSecret string) AccessTokenBuilder {
+	return &accessTokenAdapter{token: auth.NewAccessToken(apiKey, apiSecret)}
+}
+
+type accessTokenAdapter struct {
+	token *auth.AccessToken
+}
+
+func (a *accessTokenAdapter) SetIdentity(identity string) AccessTokenBuilder {
+	a.token.SetIdentity(identity)
+	return a
+}
+
+func (a *accessTokenAdapter) SetVideoGrant(grant *auth.VideoGrant) AccessTokenBuilder {
+	a.token.SetVideoGrant(grant)
+	return a
+}
+
+func (a *accessTokenAdapter) SetValidFor(duration time.Duration) AccessTokenBuilder {
+	a.token.SetValidFor(duration)
+	return a
+}
+
+func (a *accessTokenAdapter) ToJWT() (string, error) {
+	return a.token.ToJWT()
+}
+
+// TokenClient issues LiveKit JWT tokens via official protocol library.
 type TokenClient struct {
 	apiKey      string
 	apiSecret   string
 	now         func() time.Time
 	idGenerator func() string
+	factory     AccessTokenFactory
 }
 
 func NewTokenClient(apiKey string, apiSecret string, now func() time.Time) *TokenClient {
@@ -32,6 +71,7 @@ func NewTokenClient(apiKey string, apiSecret string, now func() time.Time) *Toke
 		apiSecret:   apiSecret,
 		now:         now,
 		idGenerator: id.New,
+		factory:     defaultAccessTokenFactory{},
 	}
 }
 
@@ -44,12 +84,18 @@ func (c *TokenClient) IssueToken(_ context.Context, request application.LiveKitT
 	expiresAt := issuedAt.Add(request.TTL)
 	tokenID := c.idGenerator()
 
-	encodedPayload, err := c.encodePayload(tokenID, request, issuedAt, expiresAt)
-	if err != nil {
-		return application.LiveKitIssuedToken{}, fmt.Errorf("encode token payload: %w", err)
-	}
+	grant := &auth.VideoGrant{RoomJoin: true, Room: request.RoomID}
+	grant.SetCanPublish(request.CanPublish)
+	grant.SetCanSubscribe(request.CanSubscribe)
 
-	token := encodedPayload + "." + c.sign(encodedPayload)
+	token, err := c.factory.NewAccessToken(c.apiKey, c.apiSecret).
+		SetIdentity(request.UserID).
+		SetVideoGrant(grant).
+		SetValidFor(request.TTL).
+		ToJWT()
+	if err != nil {
+		return application.LiveKitIssuedToken{}, fmt.Errorf("build livekit jwt: %w", err)
+	}
 
 	return application.LiveKitIssuedToken{
 		TokenID:   tokenID,
@@ -57,36 +103,4 @@ func (c *TokenClient) IssueToken(_ context.Context, request application.LiveKitT
 		IssuedAt:  issuedAt,
 		ExpiresAt: expiresAt,
 	}, nil
-}
-
-func (c *TokenClient) encodePayload(
-	tokenID string,
-	request application.LiveKitTokenRequest,
-	issuedAt time.Time,
-	expiresAt time.Time,
-) (string, error) {
-	payload := map[string]any{
-		"api_key":         c.apiKey,
-		"token_id":        tokenID,
-		"room_id":         request.RoomID,
-		"user_id":         request.UserID,
-		"issued_at_unix":  issuedAt.Unix(),
-		"expires_at_unix": expiresAt.Unix(),
-		"can_publish":     request.CanPublish,
-		"can_subscribe":   request.CanSubscribe,
-	}
-
-	rawPayload, err := json.Marshal(payload)
-	if err != nil {
-		return "", err
-	}
-
-	return base64.RawURLEncoding.EncodeToString(rawPayload), nil
-}
-
-func (c *TokenClient) sign(encodedPayload string) string {
-	mac := hmac.New(sha256.New, []byte(c.apiSecret))
-	_, _ = mac.Write([]byte(encodedPayload))
-
-	return hex.EncodeToString(mac.Sum(nil))
 }
