@@ -67,8 +67,9 @@ func TestHandler_JoinWorkspaceRoute(t *testing.T) {
 	group := router.Group("/api/v1")
 	handler.RegisterRoutes(group)
 
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/ws-1/members/user-7/join", nil)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/ws-1/members/user-7/join", http.NoBody)
 	request.Header.Set("X-Correlation-ID", "corr-1")
+
 	response := httptest.NewRecorder()
 
 	router.ServeHTTP(response, request)
@@ -79,6 +80,7 @@ func TestHandler_JoinWorkspaceRoute(t *testing.T) {
 	require.Equal(t, "ws-1:user-7", message.key)
 
 	var envelope map[string]any
+
 	err := json.Unmarshal(message.value, &envelope)
 	require.NoError(t, err)
 	require.Equal(t, domain.CommandJoinWorkspace, envelope["type"])
@@ -98,7 +100,7 @@ func TestHandler_OldMemberActionRouteIsRemoved(t *testing.T) {
 	group := router.Group("/api/v1")
 	handler.RegisterRoutes(group)
 
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/ws-1/members/user-7:join", nil)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/ws-1/members/user-7:join", http.NoBody)
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 

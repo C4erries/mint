@@ -232,6 +232,7 @@ func (s *Store) ListUnpublished(ctx context.Context, limit int) ([]application.O
 	).WithContext(ctx).Iter()
 
 	eventIDs := make([]string, 0, limit)
+
 	var eventID string
 	for iter.Scan(&eventID) {
 		eventIDs = append(eventIDs, eventID)
@@ -242,6 +243,7 @@ func (s *Store) ListUnpublished(ctx context.Context, limit int) ([]application.O
 	}
 
 	messages := make([]application.OutboxMessage, 0)
+
 	for i := range eventIDs {
 		outboxRow, err := s.getOutboxRow(ctx, eventIDs[i])
 		if err != nil {

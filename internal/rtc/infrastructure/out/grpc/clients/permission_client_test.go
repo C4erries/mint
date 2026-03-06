@@ -47,6 +47,7 @@ func TestPermissionClient_Ping_HealthServing(t *testing.T) {
 
 	t.Cleanup(func() {
 		server.Stop()
+
 		_ = listener.Close()
 	})
 

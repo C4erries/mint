@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	rtcv1 "github.com/c4erries/mint/api/rtc/v1"
-	"github.com/stretchr/testify/require"
 )
 
 type fakeRTCClient struct {

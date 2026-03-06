@@ -26,6 +26,7 @@ func (p *fakeKafkaProducer) Publish(_ context.Context, topic string, key string,
 
 	p.topic = topic
 	p.key = key
+
 	p.value = append([]byte(nil), value...)
 
 	return nil
@@ -51,6 +52,7 @@ func TestPublisher_Publish(t *testing.T) {
 	require.Equal(t, "ws-1:ch-1", producer.key)
 
 	var decoded application.OutboxMessage
+
 	err = json.Unmarshal(producer.value, &decoded)
 	require.NoError(t, err)
 	require.Equal(t, message.EventID, decoded.EventID)

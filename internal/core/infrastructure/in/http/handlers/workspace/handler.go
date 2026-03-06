@@ -133,11 +133,13 @@ func (h *Handler) createChannel(c *gin.Context) {
 
 func (h *Handler) joinWorkspace(c *gin.Context) {
 	workspaceID := c.Param("workspace_id")
+
 	userID := strings.TrimSpace(c.Param("user_id"))
 	if workspaceID == "" || userID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "workspace_id and user_id are required"})
 		return
 	}
+
 	commandMeta := h.buildMeta(c, workspaceID, "")
 
 	payload := map[string]any{"user_id": userID}

@@ -266,6 +266,7 @@ func buildTCPReachabilityCheck(rawURL string) func(ctx context.Context) error {
 
 	return func(ctx context.Context) error {
 		dialer := net.Dialer{}
+
 		connection, dialErr := dialer.DialContext(ctx, "tcp", host)
 		if dialErr != nil {
 			return fmt.Errorf("dial %s: %w", host, dialErr)

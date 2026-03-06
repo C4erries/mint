@@ -63,6 +63,7 @@ func NewPermissionClient(options Options) (*PermissionClient, error) {
 
 	client := options.Client
 	closer := options.Closer
+
 	var healthClient grpcHealthV1.HealthClient
 
 	if client == nil {

@@ -94,6 +94,7 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (_ *Container, err err
 	}
 
 	closers := newCloserStack(8)
+
 	defer func() {
 		if err != nil {
 			closers.Cleanup()
@@ -126,6 +127,7 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (_ *Container, err err
 	}
 
 	httpServer := buildHTTPServer(cfg, identityService, workspaceDeps.queryService, kafkaProducer, rtcQueryClient, identityStore, workspaceDeps.store, revocationStore)
+
 	grpcServer, grpcListener, err := buildGRPCServer(cfg, workspaceDeps.permissionService)
 	if err != nil {
 		return nil, err

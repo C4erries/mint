@@ -147,6 +147,7 @@ func (p *KafkaGoProducer) Ping(ctx context.Context) error {
 	}
 
 	dialer := net.Dialer{}
+
 	connection, err := dialer.DialContext(ctx, "tcp", p.brokers[0])
 	if err != nil {
 		return fmt.Errorf("dial kafka broker %s: %w", p.brokers[0], err)
