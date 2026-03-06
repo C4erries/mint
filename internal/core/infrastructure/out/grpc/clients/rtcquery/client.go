@@ -81,7 +81,9 @@ func NewClient(options Options) (*Client, error) {
 
 		dialCtx, cancel := context.WithTimeout(context.Background(), timeout)
 		connection, err := dialContext(dialCtx, address, dialOptions...)
+
 		cancel()
+
 		if err != nil {
 			return nil, fmt.Errorf("dial rtc grpc server: %w", err)
 		}
