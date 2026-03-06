@@ -79,6 +79,5 @@ func (s *QueryService) GetRtcTokenGrantStatus(ctx context.Context, query GetRtcT
 		Expired:      grant.IsExpired(s.now()),
 		CanPublish:   grant.CanPublish,
 		CanSubscribe: grant.CanSubscribe,
-		Token:        grant.Token,
 	}, nil
 }

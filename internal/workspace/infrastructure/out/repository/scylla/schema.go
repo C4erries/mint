@@ -54,7 +54,7 @@ func ensureSchema(ctx context.Context, session *gocql.Session) error {
 		"CREATE TABLE IF NOT EXISTS " + overridesTable + " (workspace_id text, channel_id text, subject_type text, subject_id text, allow_mask bigint, deny_mask bigint, updated_at timestamp, PRIMARY KEY ((workspace_id, channel_id), subject_type, subject_id))",
 		"CREATE TABLE IF NOT EXISTS " + processedCommandsTable + " (command_id text PRIMARY KEY, processed_at timestamp)",
 		"CREATE TABLE IF NOT EXISTS " + outboxTable + " (event_id text PRIMARY KEY, event_type text, command_id text, correlation_id text, causation_id text, message_id text, occurred_at timestamp, workspace_id text, channel_id text, actor_id text, schema_version int, payload_json text, published boolean)",
-		"CREATE INDEX IF NOT EXISTS " + outboxTable + "_published_idx ON " + outboxTable + " (published)",
+		"CREATE TABLE IF NOT EXISTS " + outboxUnpublishedTable + " (bucket int, event_id text, PRIMARY KEY ((bucket), event_id))",
 	}
 
 	for _, statement := range statements {

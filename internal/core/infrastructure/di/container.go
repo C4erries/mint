@@ -55,18 +55,103 @@ type Container struct {
 	logger             *slog.Logger
 }
 
-func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
+type closerStack struct {
+	closers []io.Closer
+}
+
+func newCloserStack(capacity int) *closerStack {
+	return &closerStack{closers: make([]io.Closer, 0, capacity)}
+}
+
+func (s *closerStack) Add(closer io.Closer) {
+	if closer == nil {
+		return
+	}
+
+	s.closers = append(s.closers, closer)
+}
+
+func (s *closerStack) Cleanup() {
+	for index := len(s.closers) - 1; index >= 0; index-- {
+		_ = s.closers[index].Close()
+	}
+}
+
+func (s *closerStack) Items() []io.Closer {
+	return s.closers
+}
+
+type workspaceComponents struct {
+	store             *workspacescylla.Store
+	commandService    *workspaceapp.CommandService
+	queryService      *workspaceapp.QueryService
+	permissionService *workspaceapp.PermissionService
+}
+
+func NewContainer(cfg config.Config, logger *slog.Logger) (_ *Container, err error) {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 
-	closers := make([]io.Closer, 0, 8)
-	cleanup := func() {
-		for index := len(closers) - 1; index >= 0; index-- {
-			_ = closers[index].Close()
+	closers := newCloserStack(8)
+	defer func() {
+		if err != nil {
+			closers.Cleanup()
 		}
+	}()
+
+	identityService, identityStore, revocationStore, err := buildIdentityService(cfg, closers)
+	if err != nil {
+		return nil, err
 	}
 
+	workspaceDeps, err := buildWorkspaceComponents(cfg, closers)
+	if err != nil {
+		return nil, err
+	}
+
+	kafkaProducer, err := buildKafkaProducer(cfg, closers)
+	if err != nil {
+		return nil, err
+	}
+
+	outboxRelay, workspaceConsumer, err := buildWorkspaceRuntime(cfg, logger, workspaceDeps, kafkaProducer, closers)
+	if err != nil {
+		return nil, err
+	}
+
+	rtcQueryClient, err := buildRTCQueryClient(cfg, closers)
+	if err != nil {
+		return nil, err
+	}
+
+	httpServer := buildHTTPServer(cfg, identityService, workspaceDeps.queryService, kafkaProducer, rtcQueryClient, identityStore, workspaceDeps.store, revocationStore)
+	grpcServer, grpcListener, err := buildGRPCServer(cfg, workspaceDeps.permissionService)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Container{
+		httpServer:         httpServer,
+		grpcServer:         grpcServer,
+		grpcListener:       grpcListener,
+		workspaceConsumer:  workspaceConsumer,
+		outboxRelay:        outboxRelay,
+		outboxPollInterval: cfg.OutboxPollInterval,
+		readinessChecks: []readinessCheck{
+			{name: "identity_scylla", check: identityStore.Ping},
+			{name: "workspace_scylla", check: workspaceDeps.store.Ping},
+			{name: "redis", check: revocationStore.Ping},
+		},
+		closers: closers.Items(),
+		logger:  logger,
+	}, nil
+}
+
+func buildIdentityService(
+	cfg config.Config,
+	closers *closerStack,
+) (*identityapp.Service, *identityscylla.Store, *redisrepo.RevocationStore, error) {
 	identityStore, err := identityscylla.NewStore(identityscylla.Options{
 		Hosts:            cfg.ScyllaHosts,
 		Port:             cfg.ScyllaPort,
@@ -75,10 +160,10 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 		AutoCreateSchema: cfg.ScyllaAutoCreateSchema,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("build identity scylla store: %w", err)
+		return nil, nil, nil, fmt.Errorf("build identity scylla store: %w", err)
 	}
 
-	closers = append(closers, identityStore)
+	closers.Add(identityStore)
 
 	revocationStore, err := redisrepo.NewRevocationStore(redisrepo.Options{
 		Addr:      cfg.RedisAddr,
@@ -87,16 +172,14 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 		KeyPrefix: cfg.RedisKeyPrefix,
 	})
 	if err != nil {
-		cleanup()
-		return nil, fmt.Errorf("build identity redis revocation store: %w", err)
+		return nil, nil, nil, fmt.Errorf("build identity redis revocation store: %w", err)
 	}
 
-	closers = append(closers, revocationStore)
+	closers.Add(revocationStore)
 
 	jwtTokenManager, err := jwtmanager.NewManager(cfg.JWTAccessSecret, cfg.JWTRefreshSecret, id.New)
 	if err != nil {
-		cleanup()
-		return nil, fmt.Errorf("build jwt manager: %w", err)
+		return nil, nil, nil, fmt.Errorf("build jwt manager: %w", err)
 	}
 
 	hasher := passwordhasher.NewBcryptHasher(0)
@@ -108,10 +191,13 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 		RefreshTokenTTL: cfg.JWTRefreshTTL,
 	})
 	if err != nil {
-		cleanup()
-		return nil, fmt.Errorf("build identity service: %w", err)
+		return nil, nil, nil, fmt.Errorf("build identity service: %w", err)
 	}
 
+	return identityService, identityStore, revocationStore, nil
+}
+
+func buildWorkspaceComponents(cfg config.Config, closers *closerStack) (workspaceComponents, error) {
 	workspaceStore, err := workspacescylla.NewStore(workspacescylla.Options{
 		Hosts:            cfg.ScyllaHosts,
 		Port:             cfg.ScyllaPort,
@@ -121,43 +207,57 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 		Now:              time.Now,
 	})
 	if err != nil {
-		cleanup()
-		return nil, fmt.Errorf("build workspace scylla store: %w", err)
+		return workspaceComponents{}, fmt.Errorf("build workspace scylla store: %w", err)
 	}
 
-	closers = append(closers, workspaceStore)
+	closers.Add(workspaceStore)
 
 	workspaceCommandService, err := workspaceapp.NewCommandService(workspaceStore, workspaceapp.CommandServiceOptions{
 		IDGenerator: id.New,
 		Now:         time.Now,
 	})
 	if err != nil {
-		cleanup()
-		return nil, fmt.Errorf("build workspace command service: %w", err)
+		return workspaceComponents{}, fmt.Errorf("build workspace command service: %w", err)
 	}
 
 	workspaceQueryService := workspaceapp.NewQueryService(workspaceStore)
 
 	permissionService, err := workspaceapp.NewPermissionService(workspaceStore, workspaceapp.NewBaselinePermissionEvaluator())
 	if err != nil {
-		cleanup()
-		return nil, fmt.Errorf("build workspace permission service: %w", err)
+		return workspaceComponents{}, fmt.Errorf("build workspace permission service: %w", err)
 	}
 
+	return workspaceComponents{
+		store:             workspaceStore,
+		commandService:    workspaceCommandService,
+		queryService:      workspaceQueryService,
+		permissionService: permissionService,
+	}, nil
+}
+
+func buildKafkaProducer(cfg config.Config, closers *closerStack) (*kafkaproducer.Producer, error) {
 	kafkaProducer, err := kafkaproducer.New(kafkaproducer.Config{Brokers: cfg.KafkaBrokers}, nil)
 	if err != nil {
-		cleanup()
 		return nil, fmt.Errorf("build kafka producer: %w", err)
 	}
 
-	closers = append(closers, kafkaProducer)
+	closers.Add(kafkaProducer)
 
+	return kafkaProducer, nil
+}
+
+func buildWorkspaceRuntime(
+	cfg config.Config,
+	logger *slog.Logger,
+	workspaceDeps workspaceComponents,
+	kafkaProducer *kafkaproducer.Producer,
+	closers *closerStack,
+) (*workspacepublisher.OutboxRelay, *workspaceconsumer.Consumer, error) {
 	workspaceOutboxPublisher := workspacepublisher.NewPublisher(kafkaProducer, cfg.WorkspaceEventsTopic)
 
-	outboxRelay, err := workspacepublisher.NewOutboxRelay(workspaceStore, workspaceOutboxPublisher, logger, cfg.OutboxBatchSize)
+	outboxRelay, err := workspacepublisher.NewOutboxRelay(workspaceDeps.store, workspaceOutboxPublisher, logger, cfg.OutboxBatchSize)
 	if err != nil {
-		cleanup()
-		return nil, fmt.Errorf("build workspace outbox relay: %w", err)
+		return nil, nil, fmt.Errorf("build workspace outbox relay: %w", err)
 	}
 
 	workspaceReader, err := workspaceconsumer.NewKafkaReader(workspaceconsumer.KafkaReaderConfig{
@@ -167,14 +267,17 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 		CommitInterval: 1 * time.Second,
 	}, nil)
 	if err != nil {
-		cleanup()
-		return nil, fmt.Errorf("build workspace kafka reader: %w", err)
+		return nil, nil, fmt.Errorf("build workspace kafka reader: %w", err)
 	}
 
-	closers = append(closers, workspaceReader)
+	closers.Add(workspaceReader)
 
-	consumer := workspaceconsumer.New(workspaceReader, workspaceCommandService, logger)
+	consumer := workspaceconsumer.New(workspaceReader, workspaceDeps.commandService, logger)
 
+	return outboxRelay, consumer, nil
+}
+
+func buildRTCQueryClient(cfg config.Config, closers *closerStack) (*rtcqueryclient.Client, error) {
 	rtcQueryClient, err := rtcqueryclient.NewClient(rtcqueryclient.Options{
 		Address:      cfg.RTCGRPCAddr,
 		Timeout:      cfg.RTCGRPCTimeout,
@@ -182,12 +285,24 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 		RetryBackoff: cfg.RTCGRPCRetryBackoff,
 	})
 	if err != nil {
-		cleanup()
 		return nil, fmt.Errorf("build rtc gRPC query client: %w", err)
 	}
 
-	closers = append(closers, rtcQueryClient)
+	closers.Add(rtcQueryClient)
 
+	return rtcQueryClient, nil
+}
+
+func buildHTTPServer(
+	cfg config.Config,
+	identityService *identityapp.Service,
+	workspaceQueryService *workspaceapp.QueryService,
+	kafkaProducer *kafkaproducer.Producer,
+	rtcQueryClient *rtcqueryclient.Client,
+	identityStore *identityscylla.Store,
+	workspaceStore *workspacescylla.Store,
+	revocationStore *redisrepo.RevocationStore,
+) *http.Server {
 	authHTTPHandler := authhandler.NewHandler(identityService)
 	workspaceHTTPHandler := workspacehandler.NewHandler(workspaceQueryService, kafkaProducer, cfg.WorkspaceCommandsTopic, id.New, time.Now)
 	rtcHTTPHandler := rtchandler.NewHandler(kafkaProducer, rtcQueryClient, cfg.RTCCommandsTopic, id.New, time.Now)
@@ -203,6 +318,7 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 		WorkspaceHandler: workspaceHTTPHandler,
 		RTCHandler:       rtcHTTPHandler,
 		AuthParser:       identityService,
+		TrustedProxies:   cfg.TrustedProxies,
 		ReadinessCheck: func(ctx context.Context) error {
 			readyCtx, cancel := context.WithTimeout(ctx, readinessTimeout)
 			defer cancel()
@@ -211,7 +327,7 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 		},
 	})
 
-	httpServer := &http.Server{
+	return &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
@@ -219,7 +335,9 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 		WriteTimeout:      10 * time.Second,
 		IdleTimeout:       30 * time.Second,
 	}
+}
 
+func buildGRPCServer(cfg config.Config, permissionService *workspaceapp.PermissionService) (*grpc.Server, net.Listener, error) {
 	grpcServer := grpc.NewServer()
 	permissionGRPCServer := permissionserver.New(permissionService)
 	permissionv1.RegisterPermissionServiceServer(grpcServer, permissionGRPCServer)
@@ -230,19 +348,8 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 
 	grpcListener, err := net.Listen("tcp", cfg.GRPCAddr)
 	if err != nil {
-		cleanup()
-		return nil, fmt.Errorf("listen grpc on %s: %w", cfg.GRPCAddr, err)
+		return nil, nil, fmt.Errorf("listen grpc on %s: %w", cfg.GRPCAddr, err)
 	}
 
-	return &Container{
-		httpServer:         httpServer,
-		grpcServer:         grpcServer,
-		grpcListener:       grpcListener,
-		workspaceConsumer:  consumer,
-		outboxRelay:        outboxRelay,
-		outboxPollInterval: cfg.OutboxPollInterval,
-		readinessChecks:    readinessChecks,
-		closers:            closers,
-		logger:             logger,
-	}, nil
+	return grpcServer, grpcListener, nil
 }

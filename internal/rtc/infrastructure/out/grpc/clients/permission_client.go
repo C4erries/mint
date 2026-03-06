@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	grpcHealthV1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 
 	permissionv1 "github.com/c4erries/mint/api/permission/v1"
@@ -38,6 +39,7 @@ type Options struct {
 // PermissionClient checks access policies via remote permission gRPC service.
 type PermissionClient struct {
 	client       permissionv1.PermissionServiceClient
+	healthClient grpcHealthV1.HealthClient
 	closer       io.Closer
 	timeout      time.Duration
 	maxRetries   int
@@ -61,6 +63,7 @@ func NewPermissionClient(options Options) (*PermissionClient, error) {
 
 	client := options.Client
 	closer := options.Closer
+	var healthClient grpcHealthV1.HealthClient
 
 	if client == nil {
 		address := strings.TrimSpace(options.Address)
@@ -86,6 +89,7 @@ func NewPermissionClient(options Options) (*PermissionClient, error) {
 		}
 
 		client = permissionv1.NewPermissionServiceClient(connection)
+		healthClient = grpcHealthV1.NewHealthClient(connection)
 		closer = connection
 	}
 
@@ -95,11 +99,39 @@ func NewPermissionClient(options Options) (*PermissionClient, error) {
 
 	return &PermissionClient{
 		client:       client,
+		healthClient: healthClient,
 		closer:       closer,
 		timeout:      timeout,
 		maxRetries:   options.MaxRetries,
 		retryBackoff: retryBackoff,
 	}, nil
+}
+
+func (c *PermissionClient) Ping(ctx context.Context) error {
+	if c == nil {
+		return fmt.Errorf("permission client is not initialized")
+	}
+
+	if c.healthClient == nil {
+		if connection, ok := c.closer.(*grpc.ClientConn); ok {
+			c.healthClient = grpcHealthV1.NewHealthClient(connection)
+		}
+	}
+
+	if c.healthClient == nil {
+		return fmt.Errorf("permission health client is not configured")
+	}
+
+	response, err := c.healthClient.Check(ctx, &grpcHealthV1.HealthCheckRequest{})
+	if err != nil {
+		return fmt.Errorf("permission grpc health check failed: %w", err)
+	}
+
+	if response.GetStatus() != grpcHealthV1.HealthCheckResponse_SERVING {
+		return fmt.Errorf("permission grpc health status is %s", response.GetStatus())
+	}
+
+	return nil
 }
 
 func (c *PermissionClient) CanJoinVoiceChannel(ctx context.Context, workspaceID string, channelID string, userID string) (bool, error) {

@@ -23,7 +23,7 @@ services:
       - --advertise-kafka-addr
       - INTERNAL://redpanda:9092,EXTERNAL://localhost:19092
     ports:
-      - "19092:19092"
+      - "${MINT_DEV_REDPANDA_PORT:-19092}:19092"
     healthcheck:
       test: ["CMD", "rpk", "cluster", "health", "--exit-when-healthy"]
       interval: 10s
@@ -33,7 +33,7 @@ services:
   redis:
     image: redis:7.4-alpine
     ports:
-      - "6379:6379"
+      - "${MINT_DEV_REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -44,7 +44,7 @@ services:
     image: scylladb/scylla:6.2
     command: ["--smp", "1", "--memory", "1G", "--overprovisioned", "1", "--developer-mode", "1", "--reactor-backend=epoll", "--api-address", "0.0.0.0"]
     ports:
-      - "9042:9042"
+      - "${MINT_DEV_SCYLLA_PORT:-9042}:9042"
     healthcheck:
       test: ["CMD", "cqlsh", "-e", "DESCRIBE KEYSPACES"]
       interval: 15s
@@ -56,6 +56,8 @@ services:
     working_dir: /workspace
     volumes:
       - ../../:/workspace
+      - mint-go-mod-cache:/go/pkg/mod
+      - mint-go-build-cache:/root/.cache/go-build
     command: ["go", "run", "./cmd/core"]
     environment:
       MINT_CORE_HTTP_ADDR: ":8091"
@@ -83,14 +85,16 @@ services:
       rtc-api:
         condition: service_started
     ports:
-      - "8091:8091"
-      - "9091:9091"
+      - "${MINT_DEV_CORE_HTTP_PORT:-8091}:8091"
+      - "${MINT_DEV_CORE_GRPC_PORT:-9091}:9091"
 
   rtc-api:
     image: golang:1.25
     working_dir: /workspace
     volumes:
       - ../../:/workspace
+      - mint-go-mod-cache:/go/pkg/mod
+      - mint-go-build-cache:/root/.cache/go-build
     command: ["go", "run", "./cmd/rtc-api"]
     environment:
       MINT_RTC_HTTP_ADDR: ":8093"
@@ -120,12 +124,16 @@ services:
       livekit:
         condition: service_started
     ports:
-      - "8093:8093"
-      - "9093:9093"
+      - "${MINT_DEV_RTC_HTTP_PORT:-8093}:8093"
+      - "${MINT_DEV_RTC_GRPC_PORT:-9093}:9093"
 
   livekit:
     image: livekit/livekit-server:v1.8.4
     command: ["--dev", "--bind", "0.0.0.0", "--keys", "devkey:devsecret"]
     ports:
-      - "7880:7880"
-      - "7881:7881/udp"
+      - "${MINT_DEV_LIVEKIT_HTTP_PORT:-7880}:7880"
+      - "${MINT_DEV_LIVEKIT_UDP_PORT:-7881}:7881/udp"
+
+volumes:
+  mint-go-mod-cache:
+  mint-go-build-cache:

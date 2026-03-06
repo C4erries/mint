@@ -88,7 +88,12 @@ func ensureSchema(ctx context.Context, session *gocql.Session) error {
 				payload_json text,
 				published boolean
 			)`, outboxTable),
-		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s_published_idx ON %s (published)", outboxTable, outboxTable),
+		fmt.Sprintf(`
+			CREATE TABLE IF NOT EXISTS %s (
+				bucket int,
+				event_id text,
+				PRIMARY KEY ((bucket), event_id)
+			)`, outboxUnpublishedTable),
 	}
 
 	for _, statement := range statements {

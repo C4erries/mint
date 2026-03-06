@@ -2,6 +2,7 @@ package router
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -23,11 +24,21 @@ type Dependencies struct {
 	WorkspaceHandler *workspacehandler.Handler
 	RTCHandler       *rtchandler.Handler
 	AuthParser       middleware.AccessTokenParser
+	TrustedProxies   []string
 	ReadinessCheck   ReadinessCheck
 }
 
 func New(deps Dependencies) *gin.Engine {
+	requiresAuth := deps.AuthHandler != nil || deps.WorkspaceHandler != nil || deps.RTCHandler != nil
+	if requiresAuth && deps.AuthParser == nil {
+		panic("core http router: auth parser is required for protected routes")
+	}
+
 	router := gin.New()
+	if err := router.SetTrustedProxies(deps.TrustedProxies); err != nil {
+		panic(fmt.Sprintf("core http router: invalid trusted proxies config: %v", err))
+	}
+
 	router.Use(gin.Recovery())
 
 	router.GET("/healthz", func(c *gin.Context) {
@@ -58,7 +69,7 @@ func New(deps Dependencies) *gin.Engine {
 	}
 
 	protected := v1.Group("")
-	if deps.AuthParser != nil {
+	if requiresAuth {
 		protected.Use(middleware.RequireAuth(deps.AuthParser))
 	}
 

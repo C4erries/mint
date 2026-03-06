@@ -153,14 +153,6 @@ func (h *Handler) writeAuthError(c *gin.Context, err error) {
 }
 
 func clientIP(c *gin.Context) string {
-	forwardedFor := strings.TrimSpace(c.GetHeader("X-Forwarded-For"))
-	if forwardedFor != "" {
-		parts := strings.Split(forwardedFor, ",")
-		if len(parts) > 0 {
-			return strings.TrimSpace(parts[0])
-		}
-	}
-
 	return c.ClientIP()
 }
 

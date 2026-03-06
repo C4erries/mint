@@ -3,6 +3,7 @@ package eventpublisher
 import (
 	"context"
 	"fmt"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -43,9 +44,10 @@ type KafkaGoProducerConfig struct {
 
 // KafkaGoProducer publishes events via kafka-go writer.
 type KafkaGoProducer struct {
-	writer KafkaWriter
-	mu     sync.Mutex
-	closed bool
+	writer  KafkaWriter
+	brokers []string
+	mu      sync.Mutex
+	closed  bool
 }
 
 func NewKafkaGoProducer(cfg KafkaGoProducerConfig, factory KafkaWriterFactory) (*KafkaGoProducer, error) {
@@ -82,7 +84,10 @@ func NewKafkaGoProducer(cfg KafkaGoProducerConfig, factory KafkaWriterFactory) (
 		RequiredAcks: int(kafka.RequireAll),
 	}
 
-	return &KafkaGoProducer{writer: factory.NewWriter(writerConfig)}, nil
+	return &KafkaGoProducer{
+		writer:  factory.NewWriter(writerConfig),
+		brokers: append([]string(nil), brokers...),
+	}, nil
 }
 
 func (p *KafkaGoProducer) Publish(ctx context.Context, topic string, key string, value []byte) error {
@@ -126,6 +131,28 @@ func (p *KafkaGoProducer) Close() error {
 	p.mu.Unlock()
 
 	return p.writer.Close()
+}
+
+func (p *KafkaGoProducer) Ping(ctx context.Context) error {
+	if p == nil {
+		return fmt.Errorf("kafka producer is not initialized")
+	}
+
+	if len(p.brokers) == 0 {
+		return fmt.Errorf("kafka brokers are not configured")
+	}
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	dialer := net.Dialer{}
+	connection, err := dialer.DialContext(ctx, "tcp", p.brokers[0])
+	if err != nil {
+		return fmt.Errorf("dial kafka broker %s: %w", p.brokers[0], err)
+	}
+
+	return connection.Close()
 }
 
 func normalizeBrokers(values []string) []string {

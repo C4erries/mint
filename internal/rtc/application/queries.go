@@ -39,7 +39,6 @@ type RtcTokenGrantStatus struct {
 	Expired      bool      `json:"expired"`
 	CanPublish   bool      `json:"can_publish"`
 	CanSubscribe bool      `json:"can_subscribe"`
-	Token        string    `json:"token"`
 }
 
 // Query DTOs.

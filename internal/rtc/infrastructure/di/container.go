@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -181,6 +182,9 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 	readinessChecks := []readinessCheck{
 		{name: "scylla", check: roomStore.Ping},
 		{name: "redis", check: grantStore.Ping},
+		{name: "kafka", check: producer.Ping},
+		{name: "permission_grpc", check: permissionClient.Ping},
+		{name: "livekit", check: buildTCPReachabilityCheck(cfg.LiveKitURL)},
 	}
 
 	router := gin.New()
@@ -236,4 +240,37 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 		closers:            closers,
 		logger:             logger,
 	}, nil
+}
+
+func buildTCPReachabilityCheck(rawURL string) func(ctx context.Context) error {
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		return func(context.Context) error {
+			return fmt.Errorf("parse reachability url: %w", err)
+		}
+	}
+
+	host := parsedURL.Host
+	if host == "" {
+		host = parsedURL.Path
+	}
+
+	if _, _, splitErr := net.SplitHostPort(host); splitErr != nil {
+		switch parsedURL.Scheme {
+		case "https", "wss":
+			host = net.JoinHostPort(host, "443")
+		default:
+			host = net.JoinHostPort(host, "80")
+		}
+	}
+
+	return func(ctx context.Context) error {
+		dialer := net.Dialer{}
+		connection, dialErr := dialer.DialContext(ctx, "tcp", host)
+		if dialErr != nil {
+			return fmt.Errorf("dial %s: %w", host, dialErr)
+		}
+
+		return connection.Close()
+	}
 }

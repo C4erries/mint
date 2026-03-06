@@ -3,9 +3,10 @@ package scyllarepo
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
-	"github.com/scylladb/gocqlx/v3/qb"
+	"github.com/gocql/gocql"
 
 	"github.com/c4erries/mint/internal/rtc/application"
 	"github.com/c4erries/mint/internal/rtc/domain"
@@ -74,40 +75,38 @@ func (s *Store) ListUnpublished(ctx context.Context, limit int) ([]application.O
 		limit = 100
 	}
 
-	stmt, names := qb.Select(outboxTable).
-		Columns(
-			"event_id",
-			"event_type",
-			"command_id",
-			"correlation_id",
-			"causation_id",
-			"message_id",
-			"occurred_at",
-			"workspace_id",
-			"channel_id",
-			"room_id",
-			"actor_id",
-			"schema_version",
-			"payload_json",
-		).
-		Where(qb.Eq("published")).
-		Limit(uint(limit)).
-		AllowFiltering().
-		ToCql()
+	iter := s.rawSession.Query(
+		"SELECT event_id FROM "+outboxUnpublishedTable+" WHERE bucket = ? LIMIT ?",
+		outboxUnpublishedBucket,
+		limit,
+	).WithContext(ctx).Iter()
 
-	rows := make([]outboxRow, 0, limit)
-
-	err := s.session.Query(stmt, names).
-		BindMap(qb.M{"published": false}).
-		WithContext(ctx).
-		SelectRelease(&rows)
-	if err != nil {
-		return nil, fmt.Errorf("select unpublished outbox rows: %w", err)
+	eventIDs := make([]string, 0, limit)
+	var eventID string
+	for iter.Scan(&eventID) {
+		eventIDs = append(eventIDs, eventID)
 	}
 
-	messages := make([]application.OutboxMessage, 0, len(rows))
-	for i := range rows {
-		row := rows[i]
+	if err := iter.Close(); err != nil {
+		return nil, fmt.Errorf("iterate unpublished outbox ids: %w", err)
+	}
+
+	messages := make([]application.OutboxMessage, 0, len(eventIDs))
+	for i := range eventIDs {
+		row, err := s.getOutboxRow(ctx, eventIDs[i])
+		if err != nil {
+			if errors.Is(err, gocql.ErrNotFound) {
+				_ = s.rawSession.Query(
+					"DELETE FROM "+outboxUnpublishedTable+" WHERE bucket = ? AND event_id = ?",
+					outboxUnpublishedBucket,
+					eventIDs[i],
+				).WithContext(ctx).Exec()
+
+				continue
+			}
+
+			return nil, err
+		}
 
 		payload := map[string]string{}
 		if row.PayloadJSON != "" {
@@ -141,17 +140,41 @@ func (s *Store) MarkPublished(ctx context.Context, eventID string) error {
 		return domain.ErrInvalidIdentifier
 	}
 
-	stmt, names := qb.Update(outboxTable).
-		Set("published").
-		Where(qb.Eq("event_id")).
-		ToCql()
+	batch := s.rawSession.Batch(gocql.LoggedBatch).WithContext(ctx)
+	batch.Query("UPDATE "+outboxTable+" SET published = true WHERE event_id = ?", eventID)
+	batch.Query("DELETE FROM "+outboxUnpublishedTable+" WHERE bucket = ? AND event_id = ?", outboxUnpublishedBucket, eventID)
 
-	if err := s.session.Query(stmt, names).
-		BindMap(qb.M{"event_id": eventID, "published": true}).
-		WithContext(ctx).
-		ExecRelease(); err != nil {
+	if err := s.rawSession.ExecuteBatch(batch); err != nil {
 		return fmt.Errorf("mark outbox event published: %w", err)
 	}
 
 	return nil
+}
+
+func (s *Store) getOutboxRow(ctx context.Context, eventID string) (outboxRow, error) {
+	var row outboxRow
+
+	err := s.rawSession.Query(
+		"SELECT event_id, event_type, command_id, correlation_id, causation_id, message_id, occurred_at, workspace_id, channel_id, room_id, actor_id, schema_version, payload_json FROM "+outboxTable+" WHERE event_id = ?",
+		eventID,
+	).WithContext(ctx).Scan(
+		&row.EventID,
+		&row.EventType,
+		&row.CommandID,
+		&row.CorrelationID,
+		&row.CausationID,
+		&row.MessageID,
+		&row.OccurredAt,
+		&row.WorkspaceID,
+		&row.ChannelID,
+		&row.RoomID,
+		&row.ActorID,
+		&row.SchemaVersion,
+		&row.PayloadJSON,
+	)
+	if err != nil {
+		return outboxRow{}, fmt.Errorf("query outbox row by id: %w", err)
+	}
+
+	return row, nil
 }

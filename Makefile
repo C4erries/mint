@@ -54,6 +54,6 @@ rtc-down:
 	$(DOCKER_COMPOSE) -f $(RTC_COMPOSE_FILE) down
 
 rtc-smoke:
-	$(GO) test -tags smoke ./internal/rtc/smoke -count=1 -v
+	bash ./scripts/e2e/rtc-smoke.sh
 
 check: test lint

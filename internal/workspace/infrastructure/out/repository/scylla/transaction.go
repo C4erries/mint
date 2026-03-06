@@ -261,6 +261,11 @@ func (t *transaction) commit(ctx context.Context) error {
 			string(payloadJSON),
 			false,
 		)
+		batch.Query(
+			"INSERT INTO "+outboxUnpublishedTable+" (bucket, event_id) VALUES (?, ?)",
+			outboxUnpublishedBucket,
+			message.EventID,
+		)
 
 		entries++
 	}

@@ -143,6 +143,11 @@ func (t *transaction) appendOutboxQueries(batch *gocql.Batch) (int, error) {
 			row.PayloadJSON,
 			row.Published,
 		)
+		batch.Query(
+			insertOutboxUnpublishedCQL,
+			outboxUnpublishedBucket,
+			row.EventID,
+		)
 
 		entries++
 	}

@@ -3,6 +3,7 @@ package scyllarepo
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -20,13 +21,15 @@ const (
 )
 
 const (
-	workspacesTable        = "core_workspace_workspaces"
-	channelsTable          = "core_workspace_channels"
-	membersTable           = "core_workspace_members"
-	rolesTable             = "core_workspace_roles"
-	overridesTable         = "core_workspace_channel_overrides"
-	processedCommandsTable = "core_workspace_processed_commands"
-	outboxTable            = "core_workspace_outbox"
+	workspacesTable         = "core_workspace_workspaces"
+	channelsTable           = "core_workspace_channels"
+	membersTable            = "core_workspace_members"
+	rolesTable              = "core_workspace_roles"
+	overridesTable          = "core_workspace_channel_overrides"
+	processedCommandsTable  = "core_workspace_processed_commands"
+	outboxTable             = "core_workspace_outbox"
+	outboxUnpublishedTable  = "core_workspace_outbox_unpublished"
+	outboxUnpublishedBucket = 0
 )
 
 type SessionFactory interface {
@@ -223,67 +226,59 @@ func (s *Store) ListUnpublished(ctx context.Context, limit int) ([]application.O
 	}
 
 	iter := s.session.Query(
-		"SELECT event_id, event_type, command_id, correlation_id, causation_id, message_id, occurred_at, workspace_id, channel_id, actor_id, schema_version, payload_json FROM "+outboxTable+" WHERE published = false LIMIT ? ALLOW FILTERING",
+		"SELECT event_id FROM "+outboxUnpublishedTable+" WHERE bucket = ? LIMIT ?",
+		outboxUnpublishedBucket,
 		limit,
 	).WithContext(ctx).Iter()
 
+	eventIDs := make([]string, 0, limit)
+	var eventID string
+	for iter.Scan(&eventID) {
+		eventIDs = append(eventIDs, eventID)
+	}
+
+	if err := iter.Close(); err != nil {
+		return nil, fmt.Errorf("iterate workspace unpublished outbox ids: %w", err)
+	}
+
 	messages := make([]application.OutboxMessage, 0)
+	for i := range eventIDs {
+		outboxRow, err := s.getOutboxRow(ctx, eventIDs[i])
+		if err != nil {
+			if errors.Is(err, gocql.ErrNotFound) {
+				_ = s.session.Query(
+					"DELETE FROM "+outboxUnpublishedTable+" WHERE bucket = ? AND event_id = ?",
+					outboxUnpublishedBucket,
+					eventIDs[i],
+				).WithContext(ctx).Exec()
 
-	var (
-		eventID       string
-		eventType     string
-		commandID     string
-		correlationID string
-		causationID   string
-		messageID     string
-		occurredAt    time.Time
-		workspaceID   string
-		channelID     string
-		actorID       string
-		schemaVersion int
-		payloadJSON   string
-	)
+				continue
+			}
 
-	for iter.Scan(
-		&eventID,
-		&eventType,
-		&commandID,
-		&correlationID,
-		&causationID,
-		&messageID,
-		&occurredAt,
-		&workspaceID,
-		&channelID,
-		&actorID,
-		&schemaVersion,
-		&payloadJSON,
-	) {
+			return nil, err
+		}
+
 		payload := make(map[string]string)
-		if payloadJSON != "" {
-			if err := json.Unmarshal([]byte(payloadJSON), &payload); err != nil {
-				_ = iter.Close()
+		if outboxRow.PayloadJSON != "" {
+			if err := json.Unmarshal([]byte(outboxRow.PayloadJSON), &payload); err != nil {
 				return nil, fmt.Errorf("decode workspace outbox payload: %w", err)
 			}
 		}
 
 		messages = append(messages, application.OutboxMessage{
-			EventID:       eventID,
-			EventType:     eventType,
-			CommandID:     commandID,
-			CorrelationID: correlationID,
-			CausationID:   causationID,
-			MessageID:     messageID,
-			OccurredAt:    occurredAt,
-			WorkspaceID:   workspaceID,
-			ChannelID:     channelID,
-			ActorID:       actorID,
-			SchemaVersion: schemaVersion,
+			EventID:       outboxRow.EventID,
+			EventType:     outboxRow.EventType,
+			CommandID:     outboxRow.CommandID,
+			CorrelationID: outboxRow.CorrelationID,
+			CausationID:   outboxRow.CausationID,
+			MessageID:     outboxRow.MessageID,
+			OccurredAt:    outboxRow.OccurredAt,
+			WorkspaceID:   outboxRow.WorkspaceID,
+			ChannelID:     outboxRow.ChannelID,
+			ActorID:       outboxRow.ActorID,
+			SchemaVersion: outboxRow.SchemaVersion,
 			Payload:       payload,
 		})
-	}
-
-	if err := iter.Close(); err != nil {
-		return nil, fmt.Errorf("iterate workspace outbox: %w", err)
 	}
 
 	return messages, nil
@@ -294,14 +289,57 @@ func (s *Store) MarkPublished(ctx context.Context, eventID string) error {
 		return fmt.Errorf("event id is required")
 	}
 
-	if err := s.session.Query(
-		"UPDATE "+outboxTable+" SET published = true WHERE event_id = ?",
-		eventID,
-	).WithContext(ctx).Exec(); err != nil {
+	batch := s.session.Batch(gocql.LoggedBatch).WithContext(ctx)
+	batch.Query("UPDATE "+outboxTable+" SET published = true WHERE event_id = ?", eventID)
+	batch.Query("DELETE FROM "+outboxUnpublishedTable+" WHERE bucket = ? AND event_id = ?", outboxUnpublishedBucket, eventID)
+
+	if err := s.session.ExecuteBatch(batch); err != nil {
 		return fmt.Errorf("mark workspace outbox event published: %w", err)
 	}
 
 	return nil
+}
+
+type workspaceOutboxRow struct {
+	EventID       string
+	EventType     string
+	CommandID     string
+	CorrelationID string
+	CausationID   string
+	MessageID     string
+	OccurredAt    time.Time
+	WorkspaceID   string
+	ChannelID     string
+	ActorID       string
+	SchemaVersion int
+	PayloadJSON   string
+}
+
+func (s *Store) getOutboxRow(ctx context.Context, eventID string) (workspaceOutboxRow, error) {
+	row := workspaceOutboxRow{}
+
+	err := s.session.Query(
+		"SELECT event_id, event_type, command_id, correlation_id, causation_id, message_id, occurred_at, workspace_id, channel_id, actor_id, schema_version, payload_json FROM "+outboxTable+" WHERE event_id = ?",
+		eventID,
+	).WithContext(ctx).Scan(
+		&row.EventID,
+		&row.EventType,
+		&row.CommandID,
+		&row.CorrelationID,
+		&row.CausationID,
+		&row.MessageID,
+		&row.OccurredAt,
+		&row.WorkspaceID,
+		&row.ChannelID,
+		&row.ActorID,
+		&row.SchemaVersion,
+		&row.PayloadJSON,
+	)
+	if err != nil {
+		return workspaceOutboxRow{}, fmt.Errorf("query workspace outbox row by id: %w", err)
+	}
+
+	return row, nil
 }
 
 func (s *Store) getWorkspace(ctx context.Context, workspaceID string) (domain.Workspace, error) {

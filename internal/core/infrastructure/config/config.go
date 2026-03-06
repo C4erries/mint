@@ -29,6 +29,7 @@ const (
 	defaultRTCGRPCTimeout         = 300 * time.Millisecond
 	defaultRTCGRPCMaxRetries      = 2
 	defaultRTCGRPCRetryBackoff    = 100 * time.Millisecond
+	defaultTrustedProxies         = ""
 )
 
 // Config stores runtime configuration for core service.
@@ -65,6 +66,7 @@ type Config struct {
 	RTCGRPCTimeout      time.Duration
 	RTCGRPCMaxRetries   int
 	RTCGRPCRetryBackoff time.Duration
+	TrustedProxies      []string
 }
 
 func Default() Config {
@@ -95,6 +97,7 @@ func Default() Config {
 		RTCGRPCTimeout:         defaultRTCGRPCTimeout,
 		RTCGRPCMaxRetries:      defaultRTCGRPCMaxRetries,
 		RTCGRPCRetryBackoff:    defaultRTCGRPCRetryBackoff,
+		TrustedProxies:         splitCSV(defaultTrustedProxies),
 	}
 }
 
@@ -199,6 +202,7 @@ func LoadFromEnv() (Config, error) {
 	}
 
 	cfg.RTCGRPCRetryBackoff = rtcRetryBackoff
+	cfg.TrustedProxies = csvEnvOrDefault("MINT_CORE_TRUSTED_PROXIES", cfg.TrustedProxies)
 
 	if err = validateConfig(cfg); err != nil {
 		return Config{}, err

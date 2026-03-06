@@ -23,12 +23,16 @@ const (
 	bindingsTable          = "rtc_voice_channel_bindings"
 	processedCommandsTable = "rtc_processed_commands"
 	outboxTable            = "rtc_outbox"
+	outboxUnpublishedTable = "rtc_outbox_unpublished"
 )
 
 const (
-	insertRoomCQL    = "INSERT INTO rtc_voice_rooms (room_id, workspace_id, channel_id, active, created_at, updated_at, participants_json) VALUES (?, ?, ?, ?, ?, ?, ?)"
-	insertBindingCQL = "INSERT INTO rtc_voice_channel_bindings (workspace_id, channel_id, room_id, bound_at, updated_at) VALUES (?, ?, ?, ?, ?)"
-	insertOutboxCQL  = "INSERT INTO rtc_outbox (event_id, event_type, command_id, correlation_id, causation_id, message_id, occurred_at, workspace_id, channel_id, room_id, actor_id, schema_version, payload_json, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+	outboxUnpublishedBucket = 0
+
+	insertRoomCQL              = "INSERT INTO rtc_voice_rooms (room_id, workspace_id, channel_id, active, created_at, updated_at, participants_json) VALUES (?, ?, ?, ?, ?, ?, ?)"
+	insertBindingCQL           = "INSERT INTO rtc_voice_channel_bindings (workspace_id, channel_id, room_id, bound_at, updated_at) VALUES (?, ?, ?, ?, ?)"
+	insertOutboxCQL            = "INSERT INTO rtc_outbox (event_id, event_type, command_id, correlation_id, causation_id, message_id, occurred_at, workspace_id, channel_id, room_id, actor_id, schema_version, payload_json, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+	insertOutboxUnpublishedCQL = "INSERT INTO rtc_outbox_unpublished (bucket, event_id) VALUES (?, ?)"
 )
 
 var (

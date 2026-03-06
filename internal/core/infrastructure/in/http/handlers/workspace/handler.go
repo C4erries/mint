@@ -48,7 +48,7 @@ func NewHandler(
 func (h *Handler) RegisterRoutes(group *gin.RouterGroup) {
 	group.POST("/workspaces", h.createWorkspace)
 	group.POST("/workspaces/:workspace_id/channels", h.createChannel)
-	group.POST("/workspaces/:workspace_id/members/:user_action", h.joinWorkspace)
+	group.POST("/workspaces/:workspace_id/members/:user_id/join", h.joinWorkspace)
 	group.GET("/workspaces/:workspace_id", h.getWorkspace)
 	group.GET("/workspaces/:workspace_id/channels/:channel_id", h.getChannel)
 }
@@ -133,20 +133,11 @@ func (h *Handler) createChannel(c *gin.Context) {
 
 func (h *Handler) joinWorkspace(c *gin.Context) {
 	workspaceID := c.Param("workspace_id")
-
-	action := c.Param("user_action")
-	if workspaceID == "" || action == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "workspace_id and user action are required"})
+	userID := strings.TrimSpace(c.Param("user_id"))
+	if workspaceID == "" || userID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "workspace_id and user_id are required"})
 		return
 	}
-
-	parts := strings.Split(action, ":")
-	if len(parts) != 2 || parts[0] == "" || parts[1] != "join" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported member action"})
-		return
-	}
-
-	userID := parts[0]
 	commandMeta := h.buildMeta(c, workspaceID, "")
 
 	payload := map[string]any{"user_id": userID}

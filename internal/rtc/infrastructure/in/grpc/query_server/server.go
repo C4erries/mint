@@ -132,7 +132,6 @@ func mapRtcTokenGrantStatus(statusView application.RtcTokenGrantStatus) *rtcv1.R
 		Expired:      statusView.Expired,
 		CanPublish:   statusView.CanPublish,
 		CanSubscribe: statusView.CanSubscribe,
-		Token:        statusView.Token,
 	}
 }
 

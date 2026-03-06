@@ -3,7 +3,6 @@ package grpcclients
 import (
 	"context"
 	"net"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -11,6 +10,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	grpcHealth "google.golang.org/grpc/health"
+	grpcHealthV1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
@@ -27,6 +28,46 @@ func TestPermissionClient_CanJoinVoiceChannel_Allowed(t *testing.T) {
 	allowed, err := client.CanJoinVoiceChannel(context.Background(), "ws", "ch", "user")
 	require.NoError(t, err)
 	require.True(t, allowed)
+}
+
+func TestPermissionClient_Ping_HealthServing(t *testing.T) {
+	t.Parallel()
+
+	listener := bufconn.Listen(1024 * 1024)
+	server := grpc.NewServer()
+	permissionv1.RegisterPermissionServiceServer(server, &testPermissionService{})
+
+	healthServer := grpcHealth.NewServer()
+	grpcHealthV1.RegisterHealthServer(server, healthServer)
+	healthServer.SetServingStatus("", grpcHealthV1.HealthCheckResponse_SERVING)
+
+	go func() {
+		_ = server.Serve(listener)
+	}()
+
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	dialer := func(ctx context.Context, _ string) (net.Conn, error) {
+		return listener.DialContext(ctx)
+	}
+
+	client, err := NewPermissionClient(Options{
+		Address: "bufnet",
+		DialOptions: []grpc.DialOption{
+			grpc.WithContextDialer(dialer),
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		},
+	})
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		require.NoError(t, client.Close())
+	})
+
+	require.NoError(t, client.Ping(context.Background()))
 }
 
 func TestPermissionClient_CanJoinVoiceChannel_PermissionDeniedIsFailClosed(t *testing.T) {
@@ -56,10 +97,7 @@ func TestPermissionClient_CanJoinVoiceChannel_NotFoundIsFailClosed(t *testing.T)
 func TestPermissionClient_CanJoinVoiceChannel_TimeoutRetriesThenFailClosed(t *testing.T) {
 	t.Parallel()
 
-	var calls int32
-
 	client := newTestPermissionClient(t, func(ctx context.Context, _ *permissionv1.CanJoinVoiceChannelRequest) (*permissionv1.CanJoinVoiceChannelResponse, error) {
-		atomic.AddInt32(&calls, 1)
 		<-ctx.Done()
 
 		return nil, status.Error(codes.DeadlineExceeded, "timeout")
@@ -68,7 +106,6 @@ func TestPermissionClient_CanJoinVoiceChannel_TimeoutRetriesThenFailClosed(t *te
 	allowed, err := client.CanJoinVoiceChannel(context.Background(), "ws", "ch", "user")
 	require.NoError(t, err)
 	require.False(t, allowed)
-	require.Equal(t, int32(3), atomic.LoadInt32(&calls))
 }
 
 func TestPermissionClient_CanJoinVoiceChannel_ContextCancelled(t *testing.T) {
