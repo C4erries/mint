@@ -112,7 +112,7 @@ formatters:
         - localmodule
     goimports:
       local-prefixes:
-        - github.com/c4erries/wave-mq
+        - github.com/c4erries/mint
   exclusions:
     generated: lax
     paths:
