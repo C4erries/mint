@@ -15,13 +15,15 @@ import (
 
 // Message is a minimal Kafka message abstraction.
 type Message struct {
-	Key   string
-	Value []byte
+	Key      string
+	Value    []byte
+	ackToken any
 }
 
 // Reader abstracts source of incoming command messages.
 type Reader interface {
 	Poll(ctx context.Context) (Message, error)
+	Ack(ctx context.Context, message Message) error
 	Close() error
 }
 
@@ -31,6 +33,10 @@ type NoopReader struct{}
 func (NoopReader) Poll(ctx context.Context) (Message, error) {
 	<-ctx.Done()
 	return Message{}, ctx.Err()
+}
+
+func (NoopReader) Ack(_ context.Context, _ Message) error {
+	return nil
 }
 
 func (NoopReader) Close() error {
@@ -71,6 +77,15 @@ func (c *Consumer) Run(ctx context.Context) error {
 
 		if err = c.dispatch(ctx, message); err != nil {
 			c.logger.Error("failed to dispatch rtc command", slog.String("error", err.Error()))
+			continue
+		}
+
+		if err = c.reader.Ack(ctx, message); err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return nil
+			}
+
+			c.logger.Error("failed to ack rtc command", slog.String("error", err.Error()))
 		}
 	}
 }

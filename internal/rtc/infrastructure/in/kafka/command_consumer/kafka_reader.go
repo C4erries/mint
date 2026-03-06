@@ -27,7 +27,8 @@ type KafkaReaderConfig struct {
 
 // KafkaMessageReader is a narrow interface over kafka-go reader for easier testing.
 type KafkaMessageReader interface {
-	ReadMessage(ctx context.Context) (kafka.Message, error)
+	FetchMessage(ctx context.Context) (kafka.Message, error)
+	CommitMessages(ctx context.Context, msgs ...kafka.Message) error
 	Close() error
 }
 
@@ -48,7 +49,8 @@ type KafkaReader struct {
 }
 
 func NewKafkaReader(cfg KafkaReaderConfig, factory KafkaReaderFactory) (*KafkaReader, error) {
-	if len(cfg.Brokers) == 0 {
+	brokers := trimAndFilter(cfg.Brokers)
+	if len(brokers) == 0 {
 		return nil, fmt.Errorf("kafka brokers are required")
 	}
 
@@ -80,7 +82,7 @@ func NewKafkaReader(cfg KafkaReaderConfig, factory KafkaReaderFactory) (*KafkaRe
 	}
 
 	readerConfig := kafka.ReaderConfig{
-		Brokers:        trimAndFilter(cfg.Brokers),
+		Brokers:        brokers,
 		GroupID:        cfg.GroupID,
 		Topic:          cfg.Topic,
 		MinBytes:       minBytes,
@@ -93,12 +95,26 @@ func NewKafkaReader(cfg KafkaReaderConfig, factory KafkaReaderFactory) (*KafkaRe
 }
 
 func (r *KafkaReader) Poll(ctx context.Context) (Message, error) {
-	message, err := r.reader.ReadMessage(ctx)
+	message, err := r.reader.FetchMessage(ctx)
 	if err != nil {
 		return Message{}, err
 	}
 
-	return Message{Key: string(message.Key), Value: message.Value}, nil
+	return Message{Key: string(message.Key), Value: message.Value, ackToken: message}, nil
+}
+
+func (r *KafkaReader) Ack(ctx context.Context, message Message) error {
+	token := message.ackToken
+	if token == nil {
+		return fmt.Errorf("missing kafka ack token")
+	}
+
+	rawMessage, ok := token.(kafka.Message)
+	if !ok {
+		return fmt.Errorf("invalid kafka ack token type %T", token)
+	}
+
+	return r.reader.CommitMessages(ctx, rawMessage)
 }
 
 func (r *KafkaReader) Close() error {
