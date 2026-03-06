@@ -9,13 +9,14 @@ GO ?= go
 GOLANGCI_LINT ?= golangci-lint
 GO_TEST_FLAGS ?= -count=1
 
-.PHONY: help test test-race lint check
+.PHONY: help test test-race lint lint-fix check
 
 help:
 	@echo "Targets:"
 	@echo "  make test       - run go tests"
 	@echo "  make test-race  - run go tests with race detector"
 	@echo "  make lint       - run golangci-lint"
+	@echo "  make lint-fix   - run golangci-lint with auto-fixes"
 	@echo "  make check      - run test + lint"
 
 test:
@@ -26,5 +27,8 @@ test-race:
 
 lint:
 	$(GOLANGCI_LINT) run ./...
+
+lint-fix:
+	$(GOLANGCI_LINT) run --fix ./...
 
 check: test lint
