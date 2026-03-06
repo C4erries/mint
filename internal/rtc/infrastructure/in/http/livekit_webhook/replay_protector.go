@@ -9,7 +9,7 @@ import (
 	"github.com/c4erries/mint/internal/rtc/application"
 )
 
-// ReplayProtector deduplicates webhook events by event id.
+// ReplayProtector remembers successfully processed webhook event ids.
 type ReplayProtector interface {
 	MarkIfNew(ctx context.Context, eventID string, ttl time.Duration) (bool, error)
 }

@@ -22,6 +22,14 @@ func validateConfig(cfg Config) error {
 		return fmt.Errorf("MINT_RTC_SHUTDOWN_GRACE_PERIOD must be > 0")
 	}
 
+	if cfg.RTCCommandMaxDispatchAttempts <= 0 {
+		return fmt.Errorf("MINT_RTC_COMMAND_MAX_DISPATCH_ATTEMPTS must be > 0")
+	}
+
+	if cfg.RTCCommandRetryBackoff <= 0 {
+		return fmt.Errorf("MINT_RTC_COMMAND_RETRY_BACKOFF must be > 0")
+	}
+
 	if len(cfg.KafkaBrokers) == 0 {
 		return fmt.Errorf("MINT_KAFKA_BROKERS must contain at least one broker")
 	}
@@ -48,6 +56,10 @@ func validateConfig(cfg Config) error {
 
 	if strings.TrimSpace(cfg.RTCCommandsTopic) == "" {
 		return fmt.Errorf("MINT_RTC_COMMANDS_TOPIC must not be empty")
+	}
+
+	if strings.TrimSpace(cfg.RTCCommandsDLQTopic) == "" {
+		return fmt.Errorf("MINT_RTC_COMMANDS_DLQ_TOPIC must not be empty")
 	}
 
 	if strings.TrimSpace(cfg.KafkaConsumerGroup) == "" {

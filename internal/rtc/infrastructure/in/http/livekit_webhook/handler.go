@@ -142,25 +142,33 @@ func (h *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	fresh, err := h.replay.MarkIfNew(ctx, event.GetId(), h.replayWindow)
-	if err != nil {
-		h.logger.Error("failed to reserve livekit webhook event id", slog.String("error", err.Error()), slog.String("event_id", event.GetId()))
-		http.Error(writer, "unable to reserve webhook event", http.StatusInternalServerError)
-
-		return
-	}
-
-	if !fresh {
-		writer.WriteHeader(http.StatusAccepted)
-		return
-	}
-
 	if err = h.handleEvent(ctx, event); err != nil {
 		h.handleCommandError(writer, err)
 		return
 	}
 
+	if err = h.rememberProcessedEvent(ctx, event.GetId()); err != nil {
+		h.logger.Warn("failed to remember livekit webhook event id", slog.String("event_id", event.GetId()), slog.String("error", err.Error()))
+	}
+
 	writer.WriteHeader(http.StatusAccepted)
+}
+
+func (h *Handler) rememberProcessedEvent(ctx context.Context, eventID string) error {
+	if h.replay == nil {
+		return nil
+	}
+
+	fresh, err := h.replay.MarkIfNew(ctx, eventID, h.replayWindow)
+	if err != nil {
+		return err
+	}
+
+	if !fresh {
+		h.logger.Debug("livekit webhook event already remembered", slog.String("event_id", eventID))
+	}
+
+	return nil
 }
 
 func (h *Handler) handleVerificationError(writer http.ResponseWriter, err error) {

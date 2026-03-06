@@ -45,20 +45,30 @@ func (NoopReader) Close() error {
 
 // Consumer parses Kafka envelopes and dispatches RTC commands to application layer.
 type Consumer struct {
-	reader   Reader
-	commands *application.CommandService
-	logger   *slog.Logger
+	reader      Reader
+	commands    *application.CommandService
+	deadLetters DeadLetterPublisher
+	logger      *slog.Logger
+	options     ConsumerOptions
 }
 
-func New(reader Reader, commands *application.CommandService, logger *slog.Logger) *Consumer {
+func New(
+	reader Reader,
+	commands *application.CommandService,
+	deadLetters DeadLetterPublisher,
+	logger *slog.Logger,
+	options ConsumerOptions,
+) *Consumer {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 
 	return &Consumer{
-		reader:   reader,
-		commands: commands,
-		logger:   logger,
+		reader:      reader,
+		commands:    commands,
+		deadLetters: deadLetters,
+		logger:      logger,
+		options:     options.withDefaults(),
 	}
 }
 
@@ -75,8 +85,16 @@ func (c *Consumer) Run(ctx context.Context) error {
 			continue
 		}
 
-		if err = c.dispatch(ctx, message); err != nil {
-			c.logger.Error("failed to dispatch rtc command", slog.String("error", err.Error()))
+		shouldAck, err := c.processMessage(ctx, message)
+		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return nil
+			}
+
+			c.logger.Error("failed to process rtc command", slog.String("error", err.Error()))
+		}
+
+		if !shouldAck {
 			continue
 		}
 
@@ -88,6 +106,50 @@ func (c *Consumer) Run(ctx context.Context) error {
 			c.logger.Error("failed to ack rtc command", slog.String("error", err.Error()))
 		}
 	}
+}
+
+func (c *Consumer) processMessage(ctx context.Context, message Message) (bool, error) {
+	var dispatchErr error
+
+	for attempt := 1; attempt <= c.options.MaxDispatchAttempts; attempt++ {
+		dispatchErr = c.dispatch(ctx, message)
+		if dispatchErr == nil {
+			return true, nil
+		}
+
+		if attempt == c.options.MaxDispatchAttempts {
+			break
+		}
+
+		c.logger.Warn(
+			"dispatch rtc command failed, retrying",
+			slog.Int("attempt", attempt),
+			slog.Int("max_attempts", c.options.MaxDispatchAttempts),
+			slog.String("error", dispatchErr.Error()),
+		)
+
+		if err := waitForRetry(ctx, c.options.RetryBackoff); err != nil {
+			return false, err
+		}
+	}
+
+	if c.deadLetters == nil {
+		return false, fmt.Errorf("dead letter publisher is not configured: %w", dispatchErr)
+	}
+
+	dlqMessage := buildDeadLetterMessage(message, dispatchErr, c.options.MaxDispatchAttempts, c.options.Now())
+	if err := c.deadLetters.Publish(ctx, dlqMessage); err != nil {
+		return false, fmt.Errorf("publish rtc command to dlq: %w", err)
+	}
+
+	c.logger.Error(
+		"rtc command moved to dlq",
+		slog.String("reason", dlqMessage.Reason),
+		slog.Int("attempts", dlqMessage.Attempts),
+		slog.String("command_type", dlqMessage.CommandType),
+	)
+
+	return true, nil
 }
 
 type envelope struct {
@@ -115,6 +177,10 @@ func (c *Consumer) dispatch(ctx context.Context, message Message) error {
 
 	if !application.IsCommandTypeSupported(commandEnvelope.Type) {
 		return fmt.Errorf("unsupported command type %q", commandEnvelope.Type)
+	}
+
+	if c.commands == nil {
+		return fmt.Errorf("command service is not configured")
 	}
 
 	switch commandEnvelope.Type {

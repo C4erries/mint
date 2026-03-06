@@ -146,6 +146,12 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 		return nil, fmt.Errorf("build outbox relay: %w", err)
 	}
 
+	commandDLQPublisher, err := eventpublisher.NewCommandDLQPublisher(producer, cfg.RTCCommandsDLQTopic)
+	if err != nil {
+		cleanup()
+		return nil, fmt.Errorf("build command dlq publisher: %w", err)
+	}
+
 	kafkaReader, err := commandconsumer.NewKafkaReader(commandconsumer.KafkaReaderConfig{
 		Brokers:        cfg.KafkaBrokers,
 		Topic:          cfg.RTCCommandsTopic,
@@ -159,7 +165,17 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 
 	closers = append(closers, kafkaReader)
 
-	consumer := commandconsumer.New(kafkaReader, commandService, logger)
+	consumer := commandconsumer.New(
+		kafkaReader,
+		commandService,
+		commandDLQPublisher,
+		logger,
+		commandconsumer.ConsumerOptions{
+			MaxDispatchAttempts: cfg.RTCCommandMaxDispatchAttempts,
+			RetryBackoff:        cfg.RTCCommandRetryBackoff,
+			Now:                 time.Now,
+		},
+	)
 	webhookHandler := livekitwebhook.New(cfg.LiveKitAPIKey, cfg.LiveKitAPISecret, commandService, logger)
 
 	readinessChecks := []readinessCheck{
@@ -180,6 +196,7 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 		if err := runReadinessChecks(readyCtx, readinessChecks); err != nil {
 			logger.Warn("readiness check failed", slog.String("error", err.Error()))
 			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not_ready", "error": err.Error()})
+
 			return
 		}
 
