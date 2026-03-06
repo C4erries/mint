@@ -12,12 +12,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/c4erries/mint/internal/rtc/application"
-	"github.com/c4erries/mint/internal/rtc/domain"
 	"github.com/google/uuid"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/livekit/protocol/webhook"
+
+	"github.com/c4erries/mint/internal/rtc/application"
+	"github.com/c4erries/mint/internal/rtc/domain"
 )
 
 const (
@@ -141,6 +142,7 @@ func (h *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	if err = h.validateEvent(event); err != nil {
 		h.logger.Warn("invalid livekit webhook payload", slog.String("error", err.Error()))
 		http.Error(writer, "invalid payload", http.StatusBadRequest)
+
 		return
 	}
 
@@ -153,6 +155,7 @@ func (h *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	if err != nil {
 		h.logger.Error("failed to reserve livekit webhook event id", slog.String("error", err.Error()), slog.String("event_id", event.GetId()))
 		http.Error(writer, "unable to reserve webhook event", http.StatusInternalServerError)
+
 		return
 	}
 
@@ -278,11 +281,13 @@ func (h *Handler) handleEvent(ctx context.Context, event *livekit.WebhookEvent) 
 		if userID == fallbackActorID {
 			return application.ErrInvalidCommand
 		}
+
 		return h.commands.JoinVoiceChannel(ctx, application.JoinVoiceChannelCommand{Meta: meta, UserID: userID})
 	case webhook.EventParticipantLeft, webhook.EventParticipantConnectionAborted:
 		if userID == fallbackActorID {
 			return application.ErrInvalidCommand
 		}
+
 		return h.commands.LeaveVoiceChannel(ctx, application.LeaveVoiceChannelCommand{Meta: meta, UserID: userID})
 	case webhook.EventRoomFinished:
 		return h.commands.TerminateVoiceSession(ctx, application.TerminateVoiceSessionCommand{Meta: meta})
@@ -296,8 +301,10 @@ func roomScope(event *livekit.WebhookEvent) (string, string, error) {
 	metadata := strings.TrimSpace(event.GetRoom().GetMetadata())
 	if metadata != "" {
 		var parsed roomMetadata
+
 		decoder := json.NewDecoder(strings.NewReader(metadata))
 		decoder.DisallowUnknownFields()
+
 		if err := decoder.Decode(&parsed); err != nil {
 			return "", "", fmt.Errorf("decode room metadata: %w", err)
 		}
@@ -310,6 +317,7 @@ func roomScope(event *livekit.WebhookEvent) (string, string, error) {
 	participant := event.GetParticipant()
 	if participant != nil {
 		workspaceID := strings.TrimSpace(participant.GetAttributes()["workspace_id"])
+
 		channelID := strings.TrimSpace(participant.GetAttributes()["channel_id"])
 		if workspaceID != "" && channelID != "" {
 			return workspaceID, channelID, nil
@@ -349,7 +357,8 @@ func IsDomainNotFound(err error) bool {
 
 func RunHealthProbe(ctx context.Context, endpoint string, timeout time.Duration) error {
 	client := http.Client{Timeout: timeout}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, http.NoBody)
 	if err != nil {
 		return err
 	}
@@ -358,6 +367,7 @@ func RunHealthProbe(ctx context.Context, endpoint string, timeout time.Duration)
 	if err != nil {
 		return err
 	}
+
 	defer func() {
 		_ = response.Body.Close()
 	}()
@@ -417,5 +427,6 @@ func (p *inMemoryReplayProtector) MarkIfNew(ctx context.Context, eventID string,
 	}
 
 	p.records[eventID] = expiresAt
+
 	return true, nil
 }

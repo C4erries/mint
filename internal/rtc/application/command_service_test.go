@@ -6,11 +6,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+
 	"github.com/c4erries/mint/internal/rtc/application"
 	appmocks "github.com/c4erries/mint/internal/rtc/application/mocks"
 	"github.com/c4erries/mint/internal/rtc/domain"
-	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
 )
 
 func TestCommandService_JoinVoiceChannel_ProcessedCommandIsNoop(t *testing.T) {

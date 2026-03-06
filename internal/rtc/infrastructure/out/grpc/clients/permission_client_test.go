@@ -7,13 +7,14 @@ import (
 	"testing"
 	"time"
 
-	permissionv1 "github.com/c4erries/mint/api/permission/v1"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
+
+	permissionv1 "github.com/c4erries/mint/api/permission/v1"
 )
 
 func TestPermissionClient_CanJoinVoiceChannel_Allowed(t *testing.T) {
@@ -56,9 +57,11 @@ func TestPermissionClient_CanJoinVoiceChannel_TimeoutRetriesThenFailClosed(t *te
 	t.Parallel()
 
 	var calls int32
+
 	client := newTestPermissionClient(t, func(ctx context.Context, _ *permissionv1.CanJoinVoiceChannelRequest) (*permissionv1.CanJoinVoiceChannelResponse, error) {
 		atomic.AddInt32(&calls, 1)
 		<-ctx.Done()
+
 		return nil, status.Error(codes.DeadlineExceeded, "timeout")
 	}, 10*time.Millisecond, 2, time.Millisecond)
 
@@ -103,6 +106,7 @@ func newTestPermissionClient(
 
 	t.Cleanup(func() {
 		server.Stop()
+
 		_ = listener.Close()
 	})
 

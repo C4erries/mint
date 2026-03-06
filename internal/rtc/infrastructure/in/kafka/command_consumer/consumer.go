@@ -65,6 +65,7 @@ func (c *Consumer) Run(ctx context.Context) error {
 			}
 
 			c.logger.Error("failed to poll rtc command", slog.String("error", err.Error()))
+
 			continue
 		}
 
@@ -107,42 +108,49 @@ func (c *Consumer) dispatch(ctx context.Context, message Message) error {
 		if err != nil {
 			return err
 		}
+
 		return c.commands.JoinVoiceChannel(ctx, application.JoinVoiceChannelCommand{Meta: commandEnvelope.Meta, UserID: payload.UserID})
 	case domain.CommandLeaveVoiceChannel:
 		payload, err := decodeUserPayload(commandEnvelope.Payload)
 		if err != nil {
 			return err
 		}
+
 		return c.commands.LeaveVoiceChannel(ctx, application.LeaveVoiceChannelCommand{Meta: commandEnvelope.Meta, UserID: payload.UserID})
 	case domain.CommandMuteSelf:
 		payload, err := decodeUserPayload(commandEnvelope.Payload)
 		if err != nil {
 			return err
 		}
+
 		return c.commands.MuteSelf(ctx, application.MuteSelfCommand{Meta: commandEnvelope.Meta, UserID: payload.UserID})
 	case domain.CommandUnmuteSelf:
 		payload, err := decodeUserPayload(commandEnvelope.Payload)
 		if err != nil {
 			return err
 		}
+
 		return c.commands.UnmuteSelf(ctx, application.UnmuteSelfCommand{Meta: commandEnvelope.Meta, UserID: payload.UserID})
 	case domain.CommandEnableCamera:
 		payload, err := decodeUserPayload(commandEnvelope.Payload)
 		if err != nil {
 			return err
 		}
+
 		return c.commands.EnableCamera(ctx, application.EnableCameraCommand{Meta: commandEnvelope.Meta, UserID: payload.UserID})
 	case domain.CommandDisableCamera:
 		payload, err := decodeUserPayload(commandEnvelope.Payload)
 		if err != nil {
 			return err
 		}
+
 		return c.commands.DisableCamera(ctx, application.DisableCameraCommand{Meta: commandEnvelope.Meta, UserID: payload.UserID})
 	case domain.CommandIssueRtcToken:
 		payload, err := decodeIssueTokenPayload(commandEnvelope.Payload)
 		if err != nil {
 			return err
 		}
+
 		return c.commands.IssueRtcToken(ctx, application.IssueRtcTokenCommand{
 			Meta:         commandEnvelope.Meta,
 			UserID:       payload.UserID,

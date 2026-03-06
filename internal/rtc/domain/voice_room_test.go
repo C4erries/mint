@@ -38,7 +38,6 @@ func TestVoiceRoomJoinParticipant(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		testCase := testCase
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -74,6 +73,7 @@ func TestVoiceRoomParticipantStateChanges(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, time.January, 1, 12, 0, 0, 0, time.UTC)
+
 	room, err := NewVoiceRoom("room-2", "ws-1", "ch-1", now)
 	if err != nil {
 		t.Fatalf("unexpected error creating room: %v", err)

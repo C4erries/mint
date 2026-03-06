@@ -7,11 +7,12 @@ import (
 	"strings"
 	"time"
 
-	permissionv1 "github.com/c4erries/mint/api/permission/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
+
+	permissionv1 "github.com/c4erries/mint/api/permission/v1"
 )
 
 const (
@@ -73,6 +74,7 @@ func NewPermissionClient(options Options) (*PermissionClient, error) {
 		}
 
 		dialOptions := make([]grpc.DialOption, 0, len(options.DialOptions)+1)
+
 		dialOptions = append(dialOptions, options.DialOptions...)
 		if len(dialOptions) == 0 {
 			dialOptions = append(dialOptions, grpc.WithTransportCredentials(insecure.NewCredentials()))

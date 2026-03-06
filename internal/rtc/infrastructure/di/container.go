@@ -10,6 +10,11 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/gin-gonic/gin"
+	"google.golang.org/grpc"
+	grpcHealth "google.golang.org/grpc/health"
+	grpcHealthV1 "google.golang.org/grpc/health/grpc_health_v1"
+
 	rtcv1 "github.com/c4erries/mint/api/rtc/v1"
 	"github.com/c4erries/mint/internal/rtc/application"
 	"github.com/c4erries/mint/internal/rtc/infrastructure/config"
@@ -21,10 +26,6 @@ import (
 	livekitclient "github.com/c4erries/mint/internal/rtc/infrastructure/out/livekit/client"
 	redisrepo "github.com/c4erries/mint/internal/rtc/infrastructure/out/repository/redis"
 	scyllarepo "github.com/c4erries/mint/internal/rtc/infrastructure/out/repository/scylla"
-	"github.com/gin-gonic/gin"
-	"google.golang.org/grpc"
-	grpcHealth "google.golang.org/grpc/health"
-	grpcHealthV1 "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 const readinessTimeout = 2 * time.Second
@@ -71,6 +72,7 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 	if err != nil {
 		return nil, fmt.Errorf("build scylla room store: %w", err)
 	}
+
 	closers = append(closers, roomStore)
 
 	grantStore, err := redisrepo.NewGrantStore(redisrepo.Options{
@@ -84,6 +86,7 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 		cleanup()
 		return nil, fmt.Errorf("build redis grant store: %w", err)
 	}
+
 	closers = append(closers, grantStore)
 
 	permissionClient, err := grpcclients.NewPermissionClient(grpcclients.Options{
@@ -96,6 +99,7 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 		cleanup()
 		return nil, fmt.Errorf("build permission grpc client: %w", err)
 	}
+
 	closers = append(closers, permissionClient)
 
 	liveKitClient, err := livekitclient.NewTokenClient(livekitclient.Options{
@@ -132,9 +136,11 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 		cleanup()
 		return nil, fmt.Errorf("build kafka producer: %w", err)
 	}
+
 	closers = append(closers, producer)
 
 	publisher := eventpublisher.NewPublisher(producer, cfg.RTCEventsTopic)
+
 	outboxRelay, err := eventpublisher.NewOutboxRelay(roomStore, publisher, logger, cfg.OutboxBatchSize)
 	if err != nil {
 		cleanup()
@@ -151,6 +157,7 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 		cleanup()
 		return nil, fmt.Errorf("build kafka command reader: %w", err)
 	}
+
 	closers = append(closers, kafkaReader)
 
 	consumer := commandconsumer.New(kafkaReader, commandService, logger)
@@ -174,6 +181,7 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 		if err := runReadinessChecks(readyCtx, readinessChecks); err != nil {
 			logger.Warn("readiness check failed", slog.String("error", err.Error()))
 			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not_ready", "error": err.Error()})
+
 			return
 		}
 
@@ -268,6 +276,7 @@ func (c *Container) Shutdown(ctx context.Context) error {
 	}
 
 	grpcStopped := make(chan struct{})
+
 	go func() {
 		c.grpcServer.GracefulStop()
 		close(grpcStopped)
@@ -296,6 +305,7 @@ func (c *Container) Close() error {
 	}
 
 	var closeErr error
+
 	for index := len(c.closers) - 1; index >= 0; index-- {
 		err := c.closers[index].Close()
 		if err != nil {
@@ -308,6 +318,7 @@ func (c *Container) Close() error {
 
 func runReadinessChecks(ctx context.Context, checks []readinessCheck) error {
 	var readinessErr error
+
 	for _, check := range checks {
 		if err := check.check(ctx); err != nil {
 			readinessErr = errors.Join(readinessErr, fmt.Errorf("%s: %w", check.name, err))

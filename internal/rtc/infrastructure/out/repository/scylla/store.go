@@ -9,12 +9,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/c4erries/mint/internal/rtc/application"
-	"github.com/c4erries/mint/internal/rtc/domain"
 	"github.com/gocql/gocql"
 	"github.com/scylladb/gocqlx/v3"
 	"github.com/scylladb/gocqlx/v3/qb"
 	"github.com/scylladb/gocqlx/v3/table"
+
+	"github.com/c4erries/mint/internal/rtc/application"
+	"github.com/c4erries/mint/internal/rtc/domain"
 )
 
 const (
@@ -320,6 +321,7 @@ func (s *Store) Close() error {
 	}
 
 	s.rawSession.Close()
+
 	return nil
 }
 
@@ -433,6 +435,7 @@ func (s *Store) ListUnpublished(ctx context.Context, limit int) ([]application.O
 		ToCql()
 
 	rows := make([]outboxRow, 0, limit)
+
 	err := s.session.Query(stmt, names).
 		BindMap(qb.M{"published": false}).
 		WithContext(ctx).
@@ -566,6 +569,7 @@ func (s *Store) getBinding(ctx context.Context, workspaceID string, channelID st
 	}
 
 	binding.UpdatedAt = loaded.UpdatedAt
+
 	return binding, nil
 }
 
@@ -679,6 +683,7 @@ func (t *transaction) GetRoom(ctx context.Context, roomID string) (*domain.Voice
 	}
 
 	t.loadedRooms[roomID] = room.Clone()
+
 	return room.Clone(), nil
 }
 
@@ -693,6 +698,7 @@ func (t *transaction) SaveRoom(ctx context.Context, room *domain.VoiceRoom) erro
 
 	t.loadedRooms[room.ID] = room.Clone()
 	t.dirtyRooms[room.ID] = struct{}{}
+
 	return nil
 }
 
@@ -712,6 +718,7 @@ func (t *transaction) GetBindingByChannel(ctx context.Context, workspaceID strin
 	}
 
 	t.loadedBindings[key] = binding.Clone()
+
 	return binding.Clone(), nil
 }
 
@@ -727,6 +734,7 @@ func (t *transaction) SaveBinding(ctx context.Context, binding *domain.VoiceChan
 	key := bindingKey(binding.WorkspaceID, binding.ChannelID)
 	t.loadedBindings[key] = binding.Clone()
 	t.dirtyBindings[key] = struct{}{}
+
 	return nil
 }
 
@@ -748,6 +756,7 @@ func (t *transaction) AppendOutbox(ctx context.Context, message application.Outb
 	}
 
 	t.outbox = append(t.outbox, copied)
+
 	return nil
 }
 
@@ -773,6 +782,7 @@ func (t *transaction) MarkCommandProcessed(ctx context.Context, commandID string
 	}
 
 	t.commandsToMark[commandID] = struct{}{}
+
 	return nil
 }
 
@@ -818,6 +828,7 @@ func (t *transaction) commitWriteBatch(ctx context.Context) error {
 			row.UpdatedAt,
 			row.ParticipantsJSON,
 		)
+
 		entries++
 	}
 
@@ -836,6 +847,7 @@ func (t *transaction) commitWriteBatch(ctx context.Context) error {
 			row.BoundAt,
 			row.UpdatedAt,
 		)
+
 		entries++
 	}
 
@@ -861,6 +873,7 @@ func (t *transaction) commitWriteBatch(ctx context.Context) error {
 			row.PayloadJSON,
 			row.Published,
 		)
+
 		entries++
 	}
 
@@ -900,6 +913,7 @@ func rebuildRoom(snapshot roomSnapshot) (*domain.VoiceRoom, error) {
 	room.Active = snapshot.Active
 	room.CreatedAt = snapshot.CreatedAt
 	room.UpdatedAt = snapshot.UpdatedAt
+
 	return room, nil
 }
 
@@ -1000,6 +1014,7 @@ func sortedKeys(values map[string]struct{}) []string {
 	}
 
 	sort.Strings(keys)
+
 	return keys
 }
 

@@ -59,6 +59,7 @@ func (s *GrantStore) GetGrant(ctx context.Context, tokenID string) (domain.Media
 	s.mu.RLock()
 	grant, exists := s.grants[tokenID]
 	s.mu.RUnlock()
+
 	if !exists {
 		return domain.MediaAccessGrant{}, domain.ErrGrantNotFound
 	}
@@ -78,6 +79,7 @@ func (s *GrantStore) GetGrantByCommandID(ctx context.Context, commandID string) 
 	s.mu.RLock()
 	tokenID, exists := s.commandIndex[commandID]
 	s.mu.RUnlock()
+
 	if !exists {
 		return domain.MediaAccessGrant{}, domain.ErrGrantNotFound
 	}

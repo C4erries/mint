@@ -180,6 +180,7 @@ func (s *RoomStore) MarkPublished(ctx context.Context, eventID string) error {
 		}
 
 		s.outbox[index].Published = true
+
 		return nil
 	}
 
@@ -270,6 +271,7 @@ func (t *transaction) IsCommandProcessed(ctx context.Context, commandID string) 
 	}
 
 	_, processed := t.processedCommands[commandID]
+
 	return processed, nil
 }
 
@@ -283,6 +285,7 @@ func (t *transaction) MarkCommandProcessed(ctx context.Context, commandID string
 	}
 
 	t.processedCommands[commandID] = struct{}{}
+
 	return nil
 }
 

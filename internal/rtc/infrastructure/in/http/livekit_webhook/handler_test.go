@@ -7,10 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/c4erries/mint/internal/rtc/application"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
 	"github.com/stretchr/testify/require"
+
+	"github.com/c4erries/mint/internal/rtc/application"
 )
 
 func TestRoomScope_FromRoomMetadata(t *testing.T) {

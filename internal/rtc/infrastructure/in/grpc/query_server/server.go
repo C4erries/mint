@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 
-	rtcv1 "github.com/c4erries/mint/api/rtc/v1"
-	"github.com/c4erries/mint/internal/rtc/application"
-	"github.com/c4erries/mint/internal/rtc/domain"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	rtcv1 "github.com/c4erries/mint/api/rtc/v1"
+	"github.com/c4erries/mint/internal/rtc/application"
+	"github.com/c4erries/mint/internal/rtc/domain"
 )
 
 // Server is gRPC query transport adapter.

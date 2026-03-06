@@ -33,6 +33,7 @@ func main() {
 	defer stop()
 
 	runErrCh := make(chan error, 1)
+
 	go func() {
 		runErrCh <- container.Run(runCtx)
 	}()

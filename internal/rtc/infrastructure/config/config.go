@@ -168,18 +168,21 @@ func LoadFromEnv() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+
 	cfg.PermissionTimeout = permissionTimeout
 
 	permissionMaxRetries, err := intEnvOrDefault("MINT_PERMISSION_MAX_RETRIES", cfg.PermissionMaxRetries)
 	if err != nil {
 		return Config{}, err
 	}
+
 	cfg.PermissionMaxRetries = permissionMaxRetries
 
 	permissionRetryBackoff, err := durationEnvOrDefault("MINT_PERMISSION_RETRY_BACKOFF", cfg.PermissionRetryBackoff)
 	if err != nil {
 		return Config{}, err
 	}
+
 	cfg.PermissionRetryBackoff = permissionRetryBackoff
 
 	if cfg.OutboxBatchSize <= 0 {
@@ -309,6 +312,7 @@ func csvEnvOrDefault(envName string, fallback []string) []string {
 	if value == "" {
 		copied := make([]string, len(fallback))
 		copy(copied, fallback)
+
 		return copied
 	}
 
@@ -317,6 +321,7 @@ func csvEnvOrDefault(envName string, fallback []string) []string {
 
 func splitCSV(value string) []string {
 	parts := strings.Split(value, ",")
+
 	result := make([]string, 0, len(parts))
 	for _, part := range parts {
 		trimmed := strings.TrimSpace(part)

@@ -5,10 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/c4erries/mint/internal/rtc/application"
-	appmocks "github.com/c4erries/mint/internal/rtc/application/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+
+	"github.com/c4erries/mint/internal/rtc/application"
+	appmocks "github.com/c4erries/mint/internal/rtc/application/mocks"
 )
 
 func TestOutboxRelay_FlushOnce_PublishAndMark(t *testing.T) {

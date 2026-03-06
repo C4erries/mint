@@ -7,8 +7,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/c4erries/mint/internal/rtc/domain"
 	"github.com/google/uuid"
+
+	"github.com/c4erries/mint/internal/rtc/domain"
 )
 
 // CommandServiceOptions configures write-side orchestration behavior.
@@ -133,7 +134,7 @@ func (s *CommandService) LeaveVoiceChannel(ctx context.Context, command LeaveVoi
 		}
 
 		if _, err = room.LeaveParticipant(command.UserID, command.Meta.OccurredAt); err != nil {
-			if !(errors.Is(err, domain.ErrParticipantNotFound) && isParticipantAlreadyLeft(room, command.UserID)) {
+			if !errors.Is(err, domain.ErrParticipantNotFound) || !isParticipantAlreadyLeft(room, command.UserID) {
 				return fmt.Errorf("leave participant: %w", err)
 			}
 		}

@@ -8,8 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/c4erries/mint/internal/rtc/domain"
 	"github.com/redis/go-redis/v9"
+
+	"github.com/c4erries/mint/internal/rtc/domain"
 )
 
 const defaultKeyPrefix = "mint:rtc"
@@ -96,6 +97,7 @@ func (s *GrantStore) SaveGrant(ctx context.Context, grant domain.MediaAccessGran
 	}
 
 	commandKey := s.commandKey(grant.CommandID)
+
 	created, err := s.client.SetNX(ctx, commandKey, grant.TokenID, ttl).Result()
 	if err != nil {
 		return fmt.Errorf("reserve grant command key: %w", err)

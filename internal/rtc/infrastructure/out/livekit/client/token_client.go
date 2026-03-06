@@ -6,10 +6,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/c4erries/mint/internal/rtc/application"
 	"github.com/google/uuid"
 	"github.com/livekit/protocol/auth"
 	lksdk "github.com/livekit/server-sdk-go/v2"
+
+	"github.com/c4erries/mint/internal/rtc/application"
 )
 
 // RoomServiceTokenClient defines minimal token creation contract exposed by LiveKit SDK.
