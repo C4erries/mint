@@ -29,6 +29,12 @@ const (
 	outboxTable            = "rtc_outbox"
 )
 
+const (
+	insertRoomCQL    = "INSERT INTO rtc_voice_rooms (room_id, workspace_id, channel_id, active, created_at, updated_at, participants_json) VALUES (?, ?, ?, ?, ?, ?, ?)"
+	insertBindingCQL = "INSERT INTO rtc_voice_channel_bindings (workspace_id, channel_id, room_id, bound_at, updated_at) VALUES (?, ?, ?, ?, ?)"
+	insertOutboxCQL  = "INSERT INTO rtc_outbox (event_id, event_type, command_id, correlation_id, causation_id, message_id, occurred_at, workspace_id, channel_id, room_id, actor_id, schema_version, payload_json, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+)
+
 var (
 	roomsModel = table.New(table.Metadata{
 		Name: roomsTable,
@@ -317,6 +323,19 @@ func (s *Store) Close() error {
 	return nil
 }
 
+func (s *Store) Ping(ctx context.Context) error {
+	if s == nil || s.rawSession == nil {
+		return fmt.Errorf("scylla session is not initialized")
+	}
+
+	var releaseVersion string
+	if err := s.rawSession.Query("SELECT release_version FROM system.local LIMIT 1").WithContext(ctx).Scan(&releaseVersion); err != nil {
+		return fmt.Errorf("ping scylla: %w", err)
+	}
+
+	return nil
+}
+
 func (s *Store) WithTx(ctx context.Context, fn func(tx application.VoiceRoomWriteTx) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -510,19 +529,9 @@ func (s *Store) saveRoom(ctx context.Context, room *domain.VoiceRoom) error {
 		return domain.ErrInvalidIdentifier
 	}
 
-	participantsJSON, err := json.Marshal(room.Participants())
+	row, err := toRoomRow(room)
 	if err != nil {
-		return fmt.Errorf("encode room participants: %w", err)
-	}
-
-	row := roomRow{
-		RoomID:           room.ID,
-		WorkspaceID:      room.WorkspaceID,
-		ChannelID:        room.ChannelID,
-		Active:           room.Active,
-		CreatedAt:        room.CreatedAt,
-		UpdatedAt:        room.UpdatedAt,
-		ParticipantsJSON: string(participantsJSON),
+		return err
 	}
 
 	if err = s.session.Query(roomsModel.Insert()).
@@ -565,14 +574,7 @@ func (s *Store) saveBinding(ctx context.Context, binding *domain.VoiceChannelBin
 		return domain.ErrInvalidIdentifier
 	}
 
-	row := bindingRow{
-		WorkspaceID: binding.WorkspaceID,
-		ChannelID:   binding.ChannelID,
-		RoomID:      binding.RoomID,
-		BoundAt:     binding.BoundAt,
-		UpdatedAt:   binding.UpdatedAt,
-	}
-
+	row := toBindingRow(binding)
 	if err := s.session.Query(bindingsModel.Insert()).
 		BindStruct(row).
 		WithContext(ctx).
@@ -584,26 +586,9 @@ func (s *Store) saveBinding(ctx context.Context, binding *domain.VoiceChannelBin
 }
 
 func (s *Store) appendOutbox(ctx context.Context, message application.OutboxMessage) error {
-	payloadJSON, err := json.Marshal(message.Payload)
+	row, err := toOutboxRow(message)
 	if err != nil {
-		return fmt.Errorf("encode outbox payload: %w", err)
-	}
-
-	row := outboxRow{
-		EventID:       message.EventID,
-		EventType:     message.EventType,
-		CommandID:     message.CommandID,
-		CorrelationID: message.CorrelationID,
-		CausationID:   message.CausationID,
-		MessageID:     message.MessageID,
-		OccurredAt:    message.OccurredAt,
-		WorkspaceID:   message.WorkspaceID,
-		ChannelID:     message.ChannelID,
-		RoomID:        message.RoomID,
-		ActorID:       message.ActorID,
-		SchemaVersion: message.SchemaVersion,
-		PayloadJSON:   string(payloadJSON),
-		Published:     false,
+		return err
 	}
 
 	if err = s.session.Query(outboxModel.Insert()).
@@ -641,7 +626,7 @@ func (s *Store) markCommandProcessed(ctx context.Context, commandID string) erro
 		Unique().
 		ToCql()
 
-	applied, err := s.session.Query(stmt, names).
+	_, err := s.session.Query(stmt, names).
 		BindMap(qb.M{
 			"command_id":   commandID,
 			"processed_at": s.now().UTC(),
@@ -650,10 +635,6 @@ func (s *Store) markCommandProcessed(ctx context.Context, commandID string) erro
 		ExecCASRelease()
 	if err != nil {
 		return fmt.Errorf("mark command processed: %w", err)
-	}
-
-	if !applied {
-		return nil
 	}
 
 	return nil
@@ -796,18 +777,8 @@ func (t *transaction) MarkCommandProcessed(ctx context.Context, commandID string
 }
 
 func (t *transaction) commit(ctx context.Context) error {
-	if err := t.commitRooms(ctx); err != nil {
+	if err := t.commitWriteBatch(ctx); err != nil {
 		return err
-	}
-
-	if err := t.commitBindings(ctx); err != nil {
-		return err
-	}
-
-	for _, message := range t.outbox {
-		if err := t.store.appendOutbox(ctx, message); err != nil {
-			return err
-		}
 	}
 
 	commandIDs := sortedKeys(t.commandsToMark)
@@ -820,7 +791,12 @@ func (t *transaction) commit(ctx context.Context) error {
 	return nil
 }
 
-func (t *transaction) commitRooms(ctx context.Context) error {
+func (t *transaction) commitWriteBatch(ctx context.Context) error {
+	batch := t.store.rawSession.Batch(gocql.LoggedBatch)
+	batch = batch.WithContext(ctx)
+
+	entries := 0
+
 	roomIDs := sortedKeys(t.dirtyRooms)
 	for _, roomID := range roomIDs {
 		room, ok := t.loadedRooms[roomID]
@@ -828,15 +804,23 @@ func (t *transaction) commitRooms(ctx context.Context) error {
 			continue
 		}
 
-		if err := t.store.saveRoom(ctx, room); err != nil {
+		row, err := toRoomRow(room)
+		if err != nil {
 			return err
 		}
+
+		batch.Query(insertRoomCQL,
+			row.RoomID,
+			row.WorkspaceID,
+			row.ChannelID,
+			row.Active,
+			row.CreatedAt,
+			row.UpdatedAt,
+			row.ParticipantsJSON,
+		)
+		entries++
 	}
 
-	return nil
-}
-
-func (t *transaction) commitBindings(ctx context.Context) error {
 	bindingIDs := sortedKeys(t.dirtyBindings)
 	for _, key := range bindingIDs {
 		binding, ok := t.loadedBindings[key]
@@ -844,9 +828,48 @@ func (t *transaction) commitBindings(ctx context.Context) error {
 			continue
 		}
 
-		if err := t.store.saveBinding(ctx, binding); err != nil {
+		row := toBindingRow(binding)
+		batch.Query(insertBindingCQL,
+			row.WorkspaceID,
+			row.ChannelID,
+			row.RoomID,
+			row.BoundAt,
+			row.UpdatedAt,
+		)
+		entries++
+	}
+
+	for _, message := range t.outbox {
+		row, err := toOutboxRow(message)
+		if err != nil {
 			return err
 		}
+
+		batch.Query(insertOutboxCQL,
+			row.EventID,
+			row.EventType,
+			row.CommandID,
+			row.CorrelationID,
+			row.CausationID,
+			row.MessageID,
+			row.OccurredAt,
+			row.WorkspaceID,
+			row.ChannelID,
+			row.RoomID,
+			row.ActorID,
+			row.SchemaVersion,
+			row.PayloadJSON,
+			row.Published,
+		)
+		entries++
+	}
+
+	if entries == 0 {
+		return nil
+	}
+
+	if err := t.store.rawSession.ExecuteBatch(batch); err != nil {
+		return fmt.Errorf("execute scylla write batch: %w", err)
 	}
 
 	return nil
@@ -909,6 +932,61 @@ func applyParticipant(room *domain.VoiceRoom, participant domain.VoiceParticipan
 	}
 
 	return nil
+}
+
+func toRoomRow(room *domain.VoiceRoom) (roomRow, error) {
+	if room == nil {
+		return roomRow{}, domain.ErrInvalidIdentifier
+	}
+
+	participantsJSON, err := json.Marshal(room.Participants())
+	if err != nil {
+		return roomRow{}, fmt.Errorf("encode room participants: %w", err)
+	}
+
+	return roomRow{
+		RoomID:           room.ID,
+		WorkspaceID:      room.WorkspaceID,
+		ChannelID:        room.ChannelID,
+		Active:           room.Active,
+		CreatedAt:        room.CreatedAt,
+		UpdatedAt:        room.UpdatedAt,
+		ParticipantsJSON: string(participantsJSON),
+	}, nil
+}
+
+func toBindingRow(binding *domain.VoiceChannelBinding) bindingRow {
+	return bindingRow{
+		WorkspaceID: binding.WorkspaceID,
+		ChannelID:   binding.ChannelID,
+		RoomID:      binding.RoomID,
+		BoundAt:     binding.BoundAt,
+		UpdatedAt:   binding.UpdatedAt,
+	}
+}
+
+func toOutboxRow(message application.OutboxMessage) (outboxRow, error) {
+	payloadJSON, err := json.Marshal(message.Payload)
+	if err != nil {
+		return outboxRow{}, fmt.Errorf("encode outbox payload: %w", err)
+	}
+
+	return outboxRow{
+		EventID:       message.EventID,
+		EventType:     message.EventType,
+		CommandID:     message.CommandID,
+		CorrelationID: message.CorrelationID,
+		CausationID:   message.CausationID,
+		MessageID:     message.MessageID,
+		OccurredAt:    message.OccurredAt,
+		WorkspaceID:   message.WorkspaceID,
+		ChannelID:     message.ChannelID,
+		RoomID:        message.RoomID,
+		ActorID:       message.ActorID,
+		SchemaVersion: message.SchemaVersion,
+		PayloadJSON:   string(payloadJSON),
+		Published:     false,
+	}, nil
 }
 
 func bindingKey(workspaceID string, channelID string) string {

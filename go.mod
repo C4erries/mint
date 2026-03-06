@@ -12,7 +12,7 @@ require (
 	github.com/scylladb/gocqlx/v3 v3.0.4
 	github.com/segmentio/kafka-go v0.4.50
 	github.com/stretchr/testify v1.11.1
-	google.golang.org/grpc v1.79.1
+	google.golang.org/grpc v1.79.2
 	google.golang.org/protobuf v1.36.11
 )
 

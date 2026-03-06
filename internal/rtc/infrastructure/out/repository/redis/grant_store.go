@@ -2,6 +2,7 @@ package redisrepo
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -17,6 +18,7 @@ const defaultKeyPrefix = "mint:rtc"
 type RedisClient interface {
 	Ping(ctx context.Context) *redis.StatusCmd
 	SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.BoolCmd
+	Get(ctx context.Context, key string) *redis.StringCmd
 	HSet(ctx context.Context, key string, values ...interface{}) *redis.IntCmd
 	HGetAll(ctx context.Context, key string) *redis.MapStringStringCmd
 	Expire(ctx context.Context, key string, expiration time.Duration) *redis.BoolCmd
@@ -151,6 +153,35 @@ func (s *GrantStore) GetGrant(ctx context.Context, tokenID string) (domain.Media
 	}
 
 	return grant, nil
+}
+
+func (s *GrantStore) GetGrantByCommandID(ctx context.Context, commandID string) (domain.MediaAccessGrant, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.MediaAccessGrant{}, err
+	}
+
+	tokenID, err := s.client.Get(ctx, s.commandKey(commandID)).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return domain.MediaAccessGrant{}, domain.ErrGrantNotFound
+		}
+
+		return domain.MediaAccessGrant{}, fmt.Errorf("read command grant index: %w", err)
+	}
+
+	return s.GetGrant(ctx, tokenID)
+}
+
+func (s *GrantStore) Ping(ctx context.Context) error {
+	if s == nil || s.client == nil {
+		return fmt.Errorf("redis client is not initialized")
+	}
+
+	if err := s.client.Ping(ctx).Err(); err != nil {
+		return fmt.Errorf("ping redis: %w", err)
+	}
+
+	return nil
 }
 
 func (s *GrantStore) Close() error {

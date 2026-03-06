@@ -71,4 +71,5 @@ type LiveKitClient interface {
 type MediaAccessGrantRepository interface {
 	SaveGrant(ctx context.Context, grant domain.MediaAccessGrant) error
 	GetGrant(ctx context.Context, tokenID string) (domain.MediaAccessGrant, error)
+	GetGrantByCommandID(ctx context.Context, commandID string) (domain.MediaAccessGrant, error)
 }

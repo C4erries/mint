@@ -28,6 +28,10 @@ const (
 	defaultScyllaKeyspace         = "mint_rtc"
 	defaultScyllaConsistency      = "quorum"
 	defaultScyllaAutoCreateSchema = true
+	defaultPermissionGRPCAddr     = "127.0.0.1:9091"
+	defaultPermissionTimeout      = 300 * time.Millisecond
+	defaultPermissionMaxRetries   = 2
+	defaultPermissionRetryBackoff = 100 * time.Millisecond
 )
 
 // Config contains rtc-api runtime configuration with stable defaults.
@@ -54,6 +58,10 @@ type Config struct {
 	ScyllaKeyspace         string
 	ScyllaConsistency      string
 	ScyllaAutoCreateSchema bool
+	PermissionGRPCAddr     string
+	PermissionTimeout      time.Duration
+	PermissionMaxRetries   int
+	PermissionRetryBackoff time.Duration
 }
 
 func Default() Config {
@@ -77,6 +85,10 @@ func Default() Config {
 		ScyllaKeyspace:         defaultScyllaKeyspace,
 		ScyllaConsistency:      defaultScyllaConsistency,
 		ScyllaAutoCreateSchema: defaultScyllaAutoCreateSchema,
+		PermissionGRPCAddr:     defaultPermissionGRPCAddr,
+		PermissionTimeout:      defaultPermissionTimeout,
+		PermissionMaxRetries:   defaultPermissionMaxRetries,
+		PermissionRetryBackoff: defaultPermissionRetryBackoff,
 	}
 }
 
@@ -150,6 +162,25 @@ func LoadFromEnv() (Config, error) {
 	}
 
 	cfg.ScyllaAutoCreateSchema = autoCreateSchema
+	cfg.PermissionGRPCAddr = stringEnvOrDefault("MINT_PERMISSION_GRPC_ADDR", cfg.PermissionGRPCAddr)
+
+	permissionTimeout, err := durationEnvOrDefault("MINT_PERMISSION_TIMEOUT", cfg.PermissionTimeout)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.PermissionTimeout = permissionTimeout
+
+	permissionMaxRetries, err := intEnvOrDefault("MINT_PERMISSION_MAX_RETRIES", cfg.PermissionMaxRetries)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.PermissionMaxRetries = permissionMaxRetries
+
+	permissionRetryBackoff, err := durationEnvOrDefault("MINT_PERMISSION_RETRY_BACKOFF", cfg.PermissionRetryBackoff)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.PermissionRetryBackoff = permissionRetryBackoff
 
 	if cfg.OutboxBatchSize <= 0 {
 		return Config{}, fmt.Errorf("MINT_RTC_OUTBOX_BATCH_SIZE must be > 0")
@@ -201,6 +232,22 @@ func LoadFromEnv() (Config, error) {
 
 	if strings.TrimSpace(cfg.LiveKitURL) == "" {
 		return Config{}, fmt.Errorf("MINT_LIVEKIT_URL must not be empty")
+	}
+
+	if strings.TrimSpace(cfg.PermissionGRPCAddr) == "" {
+		return Config{}, fmt.Errorf("MINT_PERMISSION_GRPC_ADDR must not be empty")
+	}
+
+	if cfg.PermissionTimeout <= 0 {
+		return Config{}, fmt.Errorf("MINT_PERMISSION_TIMEOUT must be > 0")
+	}
+
+	if cfg.PermissionMaxRetries < 0 {
+		return Config{}, fmt.Errorf("MINT_PERMISSION_MAX_RETRIES must be >= 0")
+	}
+
+	if cfg.PermissionRetryBackoff <= 0 {
+		return Config{}, fmt.Errorf("MINT_PERMISSION_RETRY_BACKOFF must be > 0")
 	}
 
 	return cfg, nil

@@ -27,6 +27,13 @@ import (
 	grpcHealthV1 "google.golang.org/grpc/health/grpc_health_v1"
 )
 
+const readinessTimeout = 2 * time.Second
+
+type readinessCheck struct {
+	name  string
+	check func(ctx context.Context) error
+}
+
 // Container assembles rtc-api dependency graph and controls runtime lifecycle.
 type Container struct {
 	httpServer      *http.Server
@@ -36,6 +43,7 @@ type Container struct {
 	outboxRelay     *eventpublisher.OutboxRelay
 
 	outboxPollInterval time.Duration
+	readinessChecks    []readinessCheck
 	closers            []io.Closer
 	logger             *slog.Logger
 }
@@ -45,7 +53,7 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 
-	closers := make([]io.Closer, 0, 4)
+	closers := make([]io.Closer, 0, 5)
 	cleanup := func() {
 		for index := len(closers) - 1; index >= 0; index-- {
 			_ = closers[index].Close()
@@ -78,7 +86,18 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 	}
 	closers = append(closers, grantStore)
 
-	permissionClient := grpcclients.NewPermissionClient()
+	permissionClient, err := grpcclients.NewPermissionClient(grpcclients.Options{
+		Address:      cfg.PermissionGRPCAddr,
+		Timeout:      cfg.PermissionTimeout,
+		MaxRetries:   cfg.PermissionMaxRetries,
+		RetryBackoff: cfg.PermissionRetryBackoff,
+	})
+	if err != nil {
+		cleanup()
+		return nil, fmt.Errorf("build permission grpc client: %w", err)
+	}
+	closers = append(closers, permissionClient)
+
 	liveKitClient, err := livekitclient.NewTokenClient(livekitclient.Options{
 		HostURL:   cfg.LiveKitURL,
 		APIKey:    cfg.LiveKitAPIKey,
@@ -137,17 +156,37 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 	consumer := commandconsumer.New(kafkaReader, commandService, logger)
 	webhookHandler := livekitwebhook.New(cfg.LiveKitAPIKey, cfg.LiveKitAPISecret, commandService, logger)
 
+	readinessChecks := []readinessCheck{
+		{name: "scylla", check: roomStore.Ping},
+		{name: "redis", check: grantStore.Ping},
+	}
+
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.POST("/livekit/webhook", gin.WrapH(webhookHandler))
 	router.GET("/healthz", func(c *gin.Context) {
 		c.String(http.StatusOK, "ok")
 	})
+	router.GET("/readyz", func(c *gin.Context) {
+		readyCtx, cancel := context.WithTimeout(c.Request.Context(), readinessTimeout)
+		defer cancel()
+
+		if err := runReadinessChecks(readyCtx, readinessChecks); err != nil {
+			logger.Warn("readiness check failed", slog.String("error", err.Error()))
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not_ready", "error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"status": "ready"})
+	})
 
 	httpServer := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       30 * time.Second,
 	}
 
 	grpcServer := grpc.NewServer()
@@ -170,6 +209,7 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 		commandConsumer:    consumer,
 		outboxRelay:        outboxRelay,
 		outboxPollInterval: cfg.OutboxPollInterval,
+		readinessChecks:    readinessChecks,
 		closers:            closers,
 		logger:             logger,
 	}, nil
@@ -264,4 +304,15 @@ func (c *Container) Close() error {
 	}
 
 	return closeErr
+}
+
+func runReadinessChecks(ctx context.Context, checks []readinessCheck) error {
+	var readinessErr error
+	for _, check := range checks {
+		if err := check.check(ctx); err != nil {
+			readinessErr = errors.Join(readinessErr, fmt.Errorf("%s: %w", check.name, err))
+		}
+	}
+
+	return readinessErr
 }

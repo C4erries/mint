@@ -1,0 +1,99 @@
+version: "3.9"
+
+services:
+  redpanda:
+    image: redpandadata/redpanda:v25.1.3
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp
+      - "1"
+      - --memory
+      - 1G
+      - --reserve-memory
+      - 0M
+      - --node-id
+      - "0"
+      - --check=false
+      - --kafka-addr
+      - INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:19092
+      - --advertise-kafka-addr
+      - INTERNAL://redpanda:9092,EXTERNAL://localhost:19092
+      - --pandaproxy-addr
+      - INTERNAL://0.0.0.0:8082
+      - --advertise-pandaproxy-addr
+      - INTERNAL://redpanda:8082
+    ports:
+      - "19092:19092"
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "health", "--brokers=redpanda:9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7.4-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  scylla:
+    image: scylladb/scylla:6.2
+    command: ["--smp", "1", "--memory", "1G", "--overprovisioned", "1", "--api-address", "0.0.0.0"]
+    ports:
+      - "9042:9042"
+    healthcheck:
+      test: ["CMD", "cqlsh", "-e", "DESCRIBE KEYSPACES"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+
+  livekit:
+    image: livekit/livekit-server:v1.8.4
+    command: ["--dev", "--bind", "0.0.0.0", "--keys", "devkey:devsecret"]
+    ports:
+      - "7880:7880"
+      - "7881:7881/udp"
+
+  rtc-api:
+    image: golang:1.25
+    working_dir: /workspace
+    volumes:
+      - ../../:/workspace
+    command: ["go", "run", "./cmd/rtc-api"]
+    environment:
+      MINT_RTC_HTTP_ADDR: ":8093"
+      MINT_RTC_GRPC_ADDR: ":9093"
+      MINT_KAFKA_BROKERS: "redpanda:9092"
+      MINT_RTC_EVENTS_TOPIC: "mint.rtc.events.v1"
+      MINT_RTC_COMMANDS_TOPIC: "mint.rtc.commands.v1"
+      MINT_RTC_KAFKA_CONSUMER_GROUP: "mint.rtc-api.v1"
+      MINT_REDIS_ADDR: "redis:6379"
+      MINT_SCYLLA_HOSTS: "scylla"
+      MINT_SCYLLA_KEYSPACE: "mint_rtc"
+      MINT_SCYLLA_AUTO_CREATE_SCHEMA: "true"
+      MINT_LIVEKIT_URL: "http://livekit:7880"
+      MINT_LIVEKIT_API_KEY: "devkey"
+      MINT_LIVEKIT_API_SECRET: "devsecret"
+      # Run permission service separately (core/workspace) and expose to Docker host on :9091.
+      MINT_PERMISSION_GRPC_ADDR: "host.docker.internal:9091"
+      MINT_PERMISSION_TIMEOUT: "300ms"
+      MINT_PERMISSION_MAX_RETRIES: "2"
+      MINT_PERMISSION_RETRY_BACKOFF: "100ms"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      scylla:
+        condition: service_healthy
+      livekit:
+        condition: service_started
+    ports:
+      - "8093:8093"
+      - "9093:9093"

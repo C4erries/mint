@@ -69,3 +69,18 @@ func (s *GrantStore) GetGrant(ctx context.Context, tokenID string) (domain.Media
 
 	return grant, nil
 }
+
+func (s *GrantStore) GetGrantByCommandID(ctx context.Context, commandID string) (domain.MediaAccessGrant, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.MediaAccessGrant{}, err
+	}
+
+	s.mu.RLock()
+	tokenID, exists := s.commandIndex[commandID]
+	s.mu.RUnlock()
+	if !exists {
+		return domain.MediaAccessGrant{}, domain.ErrGrantNotFound
+	}
+
+	return s.GetGrant(ctx, tokenID)
+}

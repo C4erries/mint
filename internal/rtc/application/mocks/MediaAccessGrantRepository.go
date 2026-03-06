@@ -79,6 +79,63 @@ func (_c *MediaAccessGrantRepository_GetGrant_Call) RunAndReturn(run func(contex
 	return _c
 }
 
+// GetGrantByCommandID provides a mock function with given fields: ctx, commandID
+func (_m *MediaAccessGrantRepository) GetGrantByCommandID(ctx context.Context, commandID string) (domain.MediaAccessGrant, error) {
+	ret := _m.Called(ctx, commandID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetGrantByCommandID")
+	}
+
+	var r0 domain.MediaAccessGrant
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, string) (domain.MediaAccessGrant, error)); ok {
+		return rf(ctx, commandID)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, string) domain.MediaAccessGrant); ok {
+		r0 = rf(ctx, commandID)
+	} else {
+		r0 = ret.Get(0).(domain.MediaAccessGrant)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = rf(ctx, commandID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MediaAccessGrantRepository_GetGrantByCommandID_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetGrantByCommandID'
+type MediaAccessGrantRepository_GetGrantByCommandID_Call struct {
+	*mock.Call
+}
+
+// GetGrantByCommandID is a helper method to define mock.On call
+//   - ctx context.Context
+//   - commandID string
+func (_e *MediaAccessGrantRepository_Expecter) GetGrantByCommandID(ctx interface{}, commandID interface{}) *MediaAccessGrantRepository_GetGrantByCommandID_Call {
+	return &MediaAccessGrantRepository_GetGrantByCommandID_Call{Call: _e.mock.On("GetGrantByCommandID", ctx, commandID)}
+}
+
+func (_c *MediaAccessGrantRepository_GetGrantByCommandID_Call) Run(run func(ctx context.Context, commandID string)) *MediaAccessGrantRepository_GetGrantByCommandID_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(string))
+	})
+	return _c
+}
+
+func (_c *MediaAccessGrantRepository_GetGrantByCommandID_Call) Return(_a0 domain.MediaAccessGrant, _a1 error) *MediaAccessGrantRepository_GetGrantByCommandID_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MediaAccessGrantRepository_GetGrantByCommandID_Call) RunAndReturn(run func(context.Context, string) (domain.MediaAccessGrant, error)) *MediaAccessGrantRepository_GetGrantByCommandID_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // SaveGrant provides a mock function with given fields: ctx, grant
 func (_m *MediaAccessGrantRepository) SaveGrant(ctx context.Context, grant domain.MediaAccessGrant) error {
 	ret := _m.Called(ctx, grant)

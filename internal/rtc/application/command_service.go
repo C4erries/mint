@@ -84,7 +84,9 @@ func (s *CommandService) JoinVoiceChannel(ctx context.Context, command JoinVoice
 		}
 
 		if _, err = room.JoinParticipant(command.UserID, command.Meta.OccurredAt); err != nil {
-			return fmt.Errorf("join participant: %w", err)
+			if !errors.Is(err, domain.ErrParticipantAlreadyJoined) {
+				return fmt.Errorf("join participant: %w", err)
+			}
 		}
 
 		if err = tx.SaveRoom(ctx, room); err != nil {
@@ -131,7 +133,9 @@ func (s *CommandService) LeaveVoiceChannel(ctx context.Context, command LeaveVoi
 		}
 
 		if _, err = room.LeaveParticipant(command.UserID, command.Meta.OccurredAt); err != nil {
-			return fmt.Errorf("leave participant: %w", err)
+			if !(errors.Is(err, domain.ErrParticipantNotFound) && isParticipantAlreadyLeft(room, command.UserID)) {
+				return fmt.Errorf("leave participant: %w", err)
+			}
 		}
 
 		if err = tx.SaveRoom(ctx, room); err != nil {
@@ -246,39 +250,54 @@ func (s *CommandService) IssueRtcToken(ctx context.Context, command IssueRtcToke
 			return domain.ErrParticipantNotFound
 		}
 
-		issuedToken, err := s.livekit.IssueToken(ctx, LiveKitTokenRequest{
-			RoomID:       room.ID,
-			UserID:       command.UserID,
-			TTL:          ttl,
-			CanPublish:   command.CanPublish,
-			CanSubscribe: command.CanSubscribe,
-		})
+		savedGrant, err := s.grants.GetGrantByCommandID(ctx, command.Meta.CommandID)
 		if err != nil {
-			return fmt.Errorf("issue livekit token: %w", err)
-		}
+			if !errors.Is(err, domain.ErrGrantNotFound) && !errors.Is(err, domain.ErrGrantExpired) {
+				return fmt.Errorf("load grant by command id: %w", err)
+			}
 
-		issuedAt := issuedToken.IssuedAt
-		if issuedAt.IsZero() {
-			issuedAt = s.now()
-		}
+			issuedToken, issueErr := s.livekit.IssueToken(ctx, LiveKitTokenRequest{
+				RoomID:       room.ID,
+				UserID:       command.UserID,
+				TTL:          ttl,
+				CanPublish:   command.CanPublish,
+				CanSubscribe: command.CanSubscribe,
+			})
+			if issueErr != nil {
+				return fmt.Errorf("issue livekit token: %w", issueErr)
+			}
 
-		grant, err := domain.NewMediaAccessGrant(
-			issuedToken.TokenID,
-			command.Meta.CommandID,
-			room.ID,
-			command.UserID,
-			issuedToken.Token,
-			command.CanPublish,
-			command.CanSubscribe,
-			issuedAt,
-			issuedToken.ExpiresAt,
-		)
-		if err != nil {
-			return fmt.Errorf("create grant: %w", err)
-		}
+			issuedAt := issuedToken.IssuedAt
+			if issuedAt.IsZero() {
+				issuedAt = s.now()
+			}
 
-		if err = s.grants.SaveGrant(ctx, grant); err != nil {
-			return fmt.Errorf("save grant: %w", err)
+			grant, createErr := domain.NewMediaAccessGrant(
+				issuedToken.TokenID,
+				command.Meta.CommandID,
+				room.ID,
+				command.UserID,
+				issuedToken.Token,
+				command.CanPublish,
+				command.CanSubscribe,
+				issuedAt,
+				issuedToken.ExpiresAt,
+			)
+			if createErr != nil {
+				return fmt.Errorf("create grant: %w", createErr)
+			}
+
+			savedGrant = grant
+			if saveErr := s.grants.SaveGrant(ctx, grant); saveErr != nil {
+				if !errors.Is(saveErr, domain.ErrGrantAlreadyExists) {
+					return fmt.Errorf("save grant: %w", saveErr)
+				}
+
+				savedGrant, saveErr = s.grants.GetGrantByCommandID(ctx, command.Meta.CommandID)
+				if saveErr != nil {
+					return fmt.Errorf("load existing grant by command id: %w", saveErr)
+				}
+			}
 		}
 
 		if err = room.Touch(command.Meta.OccurredAt); err != nil {
@@ -290,9 +309,9 @@ func (s *CommandService) IssueRtcToken(ctx context.Context, command IssueRtcToke
 		}
 
 		message := s.newOutboxMessage(command.Meta, domain.EventRtcTokenIssued, room.ID, map[string]string{
-			"token_id":    issuedToken.TokenID,
+			"token_id":    savedGrant.TokenID,
 			"user_id":     command.UserID,
-			"expires_at":  issuedToken.ExpiresAt.Format(time.RFC3339Nano),
+			"expires_at":  savedGrant.ExpiresAt.Format(time.RFC3339Nano),
 			"ttl_seconds": strconv.FormatInt(int64(ttl.Seconds()), 10),
 		})
 		if err = tx.AppendOutbox(ctx, message); err != nil {
@@ -497,7 +516,7 @@ func (s *CommandService) newOutboxMessage(meta CommandMeta, eventType string, ro
 	}
 
 	return OutboxMessage{
-		EventID:       s.idGenerator(),
+		EventID:       s.newEventID(meta.CommandID, eventType),
 		EventType:     eventType,
 		CommandID:     meta.CommandID,
 		CorrelationID: meta.CorrelationID,
@@ -511,4 +530,17 @@ func (s *CommandService) newOutboxMessage(meta CommandMeta, eventType string, ro
 		SchemaVersion: meta.SchemaVersion,
 		Payload:       payload,
 	}
+}
+
+func (s *CommandService) newEventID(commandID string, eventType string) string {
+	if commandID == "" {
+		return s.idGenerator()
+	}
+
+	return commandID + ":" + eventType
+}
+
+func isParticipantAlreadyLeft(room *domain.VoiceRoom, userID string) bool {
+	participant, found := room.Participant(userID)
+	return found && participant.LeftAt != nil
 }
