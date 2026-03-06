@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/c4erries/mint/internal/workspace/application"
 )
@@ -24,6 +25,15 @@ func NewPublisher(producer KafkaProducer, topic string) *Publisher {
 }
 
 func (p *Publisher) Publish(ctx context.Context, message application.OutboxMessage) error {
+	if p == nil || p.producer == nil {
+		return fmt.Errorf("workspace kafka producer is not configured")
+	}
+
+	topic := strings.TrimSpace(p.topic)
+	if topic == "" {
+		return fmt.Errorf("workspace kafka topic is required")
+	}
+
 	rawMessage, err := json.Marshal(message)
 	if err != nil {
 		return fmt.Errorf("marshal workspace outbox message: %w", err)
@@ -34,7 +44,7 @@ func (p *Publisher) Publish(ctx context.Context, message application.OutboxMessa
 		partitionKey = message.WorkspaceID + ":" + message.ChannelID
 	}
 
-	if err = p.producer.Publish(ctx, p.topic, partitionKey, rawMessage); err != nil {
+	if err = p.producer.Publish(ctx, topic, partitionKey, rawMessage); err != nil {
 		return fmt.Errorf("publish workspace outbox message to kafka: %w", err)
 	}
 

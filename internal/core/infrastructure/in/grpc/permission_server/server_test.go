@@ -118,3 +118,20 @@ func TestServer_CanJoinVoiceChannel(t *testing.T) {
 		})
 	}
 }
+
+func TestServer_CanJoinVoiceChannel_ServiceNotConfigured(t *testing.T) {
+	t.Parallel()
+
+	server := New(nil)
+	response, err := server.CanJoinVoiceChannel(context.Background(), &permissionv1.CanJoinVoiceChannelRequest{
+		WorkspaceId: "ws-1",
+		ChannelId:   "ch-1",
+		UserId:      "user-1",
+	})
+	require.Nil(t, response)
+	require.Error(t, err)
+
+	grpcStatus, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.Internal, grpcStatus.Code())
+}

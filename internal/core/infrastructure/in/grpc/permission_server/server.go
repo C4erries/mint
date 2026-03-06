@@ -24,6 +24,10 @@ func New(permissions *workspaceapp.PermissionService) *Server {
 }
 
 func (s *Server) CanJoinVoiceChannel(ctx context.Context, request *permissionv1.CanJoinVoiceChannelRequest) (*permissionv1.CanJoinVoiceChannelResponse, error) {
+	if s.permissions == nil {
+		return nil, status.Error(codes.Internal, "permission service is not configured")
+	}
+
 	if request.GetWorkspaceId() == "" || request.GetChannelId() == "" || request.GetUserId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "workspace_id, channel_id and user_id are required")
 	}

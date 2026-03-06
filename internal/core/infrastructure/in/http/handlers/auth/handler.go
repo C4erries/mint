@@ -2,6 +2,7 @@ package auth
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 
@@ -164,5 +165,5 @@ func clientIP(c *gin.Context) string {
 }
 
 func isBodyEmptyError(err error) bool {
-	return strings.Contains(err.Error(), "EOF")
+	return errors.Is(err, io.EOF) || strings.Contains(err.Error(), "EOF")
 }

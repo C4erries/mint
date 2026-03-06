@@ -103,10 +103,16 @@ func (h *Handler) createChannel(c *gin.Context) {
 		return
 	}
 
+	channelKind := strings.TrimSpace(request.Kind)
+	if channelKind != domain.ChannelTypeText && channelKind != domain.ChannelTypeVoice {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "channel kind must be text or voice"})
+		return
+	}
+
 	channelID := h.idGenerator()
 	commandMeta := h.buildMeta(c, workspaceID, channelID)
 
-	payload := map[string]any{"channel_name": strings.TrimSpace(request.Name), "channel_kind": strings.TrimSpace(request.Kind)}
+	payload := map[string]any{"channel_name": strings.TrimSpace(request.Name), "channel_kind": channelKind}
 	if payload["channel_name"] == "" || payload["channel_kind"] == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "channel name and kind are required"})
 		return
@@ -181,6 +187,10 @@ func (h *Handler) getChannel(c *gin.Context) {
 }
 
 func (h *Handler) publishCommand(ctx context.Context, commandType string, meta workspaceapp.CommandMeta, payload any, key string) error {
+	if h.publisher == nil {
+		return errors.New("workspace command publisher is not configured")
+	}
+
 	envelope := map[string]any{
 		"type":    commandType,
 		"meta":    meta,

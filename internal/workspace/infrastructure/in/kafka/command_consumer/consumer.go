@@ -42,6 +42,14 @@ func New(reader Reader, commands *application.CommandService, logger *slog.Logge
 }
 
 func (c *Consumer) Run(ctx context.Context) error {
+	if c == nil {
+		return nil
+	}
+
+	if c.reader == nil {
+		return fmt.Errorf("workspace command reader is not configured")
+	}
+
 	for {
 		message, err := c.reader.Poll(ctx)
 		if err != nil {
@@ -89,6 +97,10 @@ type userPayload struct {
 }
 
 func (c *Consumer) dispatch(ctx context.Context, message Message) error {
+	if c.commands == nil {
+		return fmt.Errorf("workspace command service is not configured")
+	}
+
 	var commandEnvelope envelope
 	if err := json.Unmarshal(message.Value, &commandEnvelope); err != nil {
 		return fmt.Errorf("decode workspace command envelope: %w", err)

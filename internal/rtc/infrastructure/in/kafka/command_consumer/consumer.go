@@ -73,6 +73,14 @@ func New(
 }
 
 func (c *Consumer) Run(ctx context.Context) error {
+	if c == nil {
+		return nil
+	}
+
+	if c.reader == nil {
+		return fmt.Errorf("command reader is not configured")
+	}
+
 	for {
 		message, err := c.reader.Poll(ctx)
 		if err != nil {

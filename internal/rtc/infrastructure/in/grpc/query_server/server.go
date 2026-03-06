@@ -25,6 +25,10 @@ func New(queries *application.QueryService) *Server {
 }
 
 func (s *Server) GetVoiceRoomState(ctx context.Context, request *rtcv1.GetVoiceRoomStateRequest) (*rtcv1.GetVoiceRoomStateResponse, error) {
+	if err := s.ensureQueries(); err != nil {
+		return nil, err
+	}
+
 	state, err := s.queries.GetVoiceRoomState(ctx, application.GetVoiceRoomStateQuery{
 		WorkspaceID: request.GetWorkspaceId(),
 		ChannelID:   request.GetChannelId(),
@@ -37,6 +41,10 @@ func (s *Server) GetVoiceRoomState(ctx context.Context, request *rtcv1.GetVoiceR
 }
 
 func (s *Server) ListVoiceParticipants(ctx context.Context, request *rtcv1.ListVoiceParticipantsRequest) (*rtcv1.ListVoiceParticipantsResponse, error) {
+	if err := s.ensureQueries(); err != nil {
+		return nil, err
+	}
+
 	participants, err := s.queries.ListVoiceParticipants(ctx, application.ListVoiceParticipantsQuery{RoomID: request.GetRoomId()})
 	if err != nil {
 		return nil, mapQueryError(err)
@@ -51,6 +59,10 @@ func (s *Server) ListVoiceParticipants(ctx context.Context, request *rtcv1.ListV
 }
 
 func (s *Server) GetVoiceChannelBinding(ctx context.Context, request *rtcv1.GetVoiceChannelBindingRequest) (*rtcv1.GetVoiceChannelBindingResponse, error) {
+	if err := s.ensureQueries(); err != nil {
+		return nil, err
+	}
+
 	binding, err := s.queries.GetVoiceChannelBinding(ctx, application.GetVoiceChannelBindingQuery{
 		WorkspaceID: request.GetWorkspaceId(),
 		ChannelID:   request.GetChannelId(),
@@ -63,6 +75,10 @@ func (s *Server) GetVoiceChannelBinding(ctx context.Context, request *rtcv1.GetV
 }
 
 func (s *Server) GetRtcTokenGrantStatus(ctx context.Context, request *rtcv1.GetRtcTokenGrantStatusRequest) (*rtcv1.GetRtcTokenGrantStatusResponse, error) {
+	if err := s.ensureQueries(); err != nil {
+		return nil, err
+	}
+
 	grantStatus, err := s.queries.GetRtcTokenGrantStatus(ctx, application.GetRtcTokenGrantStatusQuery{TokenID: request.GetTokenId()})
 	if err != nil {
 		return nil, mapQueryError(err)
@@ -118,6 +134,14 @@ func mapRtcTokenGrantStatus(statusView application.RtcTokenGrantStatus) *rtcv1.R
 		CanSubscribe: statusView.CanSubscribe,
 		Token:        statusView.Token,
 	}
+}
+
+func (s *Server) ensureQueries() error {
+	if s == nil || s.queries == nil {
+		return status.Error(codes.Unavailable, "rtc query service is not configured")
+	}
+
+	return nil
 }
 
 func mapQueryError(err error) error {

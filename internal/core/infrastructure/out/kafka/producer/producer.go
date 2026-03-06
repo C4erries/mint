@@ -86,8 +86,12 @@ func New(cfg Config, factory WriterFactory) (*Producer, error) {
 }
 
 func (p *Producer) Publish(ctx context.Context, topic string, key string, value []byte) error {
-	if topic == "" {
+	if strings.TrimSpace(topic) == "" {
 		return fmt.Errorf("kafka topic is required")
+	}
+
+	if p == nil || p.writer == nil {
+		return fmt.Errorf("kafka producer is not configured")
 	}
 
 	if err := ctx.Err(); err != nil {

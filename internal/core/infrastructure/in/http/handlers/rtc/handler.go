@@ -3,6 +3,7 @@ package rtc
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -166,6 +167,10 @@ func (h *Handler) publishSimpleUserCommand(c *gin.Context, commandType string) {
 }
 
 func (h *Handler) publishCommand(ctx context.Context, commandType string, meta workspaceapp.CommandMeta, payload map[string]any, key string) error {
+	if h.publisher == nil {
+		return errors.New("rtc command publisher is not configured")
+	}
+
 	envelope := map[string]any{
 		"type": commandType,
 		"meta": map[string]any{
@@ -213,6 +218,11 @@ func (h *Handler) buildMeta(c *gin.Context, workspaceID string, channelID string
 }
 
 func (h *Handler) getVoiceState(c *gin.Context) {
+	if h.queryClient == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "rtc query client is not configured"})
+		return
+	}
+
 	response, err := h.queryClient.GetVoiceRoomState(c.Request.Context(), c.Param("workspace_id"), c.Param("channel_id"))
 	if err != nil {
 		writeGRPCError(c, err)
@@ -223,6 +233,11 @@ func (h *Handler) getVoiceState(c *gin.Context) {
 }
 
 func (h *Handler) getVoiceBinding(c *gin.Context) {
+	if h.queryClient == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "rtc query client is not configured"})
+		return
+	}
+
 	response, err := h.queryClient.GetVoiceChannelBinding(c.Request.Context(), c.Param("workspace_id"), c.Param("channel_id"))
 	if err != nil {
 		writeGRPCError(c, err)
@@ -233,6 +248,11 @@ func (h *Handler) getVoiceBinding(c *gin.Context) {
 }
 
 func (h *Handler) listVoiceParticipants(c *gin.Context) {
+	if h.queryClient == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "rtc query client is not configured"})
+		return
+	}
+
 	response, err := h.queryClient.ListVoiceParticipants(c.Request.Context(), c.Param("room_id"))
 	if err != nil {
 		writeGRPCError(c, err)
@@ -243,6 +263,11 @@ func (h *Handler) listVoiceParticipants(c *gin.Context) {
 }
 
 func (h *Handler) getTokenGrantStatus(c *gin.Context) {
+	if h.queryClient == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "rtc query client is not configured"})
+		return
+	}
+
 	response, err := h.queryClient.GetRtcTokenGrantStatus(c.Request.Context(), c.Param("token_id"))
 	if err != nil {
 		writeGRPCError(c, err)

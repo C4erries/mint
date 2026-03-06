@@ -6,6 +6,8 @@ services:
     command:
       - redpanda
       - start
+      - --set
+      - redpanda.auto_create_topics_enabled=true
       - --overprovisioned
       - --smp
       - "1"
@@ -23,7 +25,7 @@ services:
     ports:
       - "19092:19092"
     healthcheck:
-      test: ["CMD", "rpk", "cluster", "health", "--brokers=redpanda:9092"]
+      test: ["CMD", "rpk", "cluster", "health", "--exit-when-healthy"]
       interval: 10s
       timeout: 5s
       retries: 20
@@ -40,7 +42,7 @@ services:
 
   scylla:
     image: scylladb/scylla:6.2
-    command: ["--smp", "1", "--memory", "1G", "--overprovisioned", "1", "--api-address", "0.0.0.0"]
+    command: ["--smp", "1", "--memory", "1G", "--overprovisioned", "1", "--developer-mode", "1", "--reactor-backend=epoll", "--api-address", "0.0.0.0"]
     ports:
       - "9042:9042"
     healthcheck:

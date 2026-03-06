@@ -66,6 +66,11 @@ func (s *CommandService) IssueRtcToken(ctx context.Context, command IssueRtcToke
 				issuedAt = s.now()
 			}
 
+			expiresAt := issuedToken.ExpiresAt
+			if expiresAt.IsZero() {
+				expiresAt = issuedAt.Add(ttl)
+			}
+
 			grant, createErr := domain.NewMediaAccessGrant(
 				issuedToken.TokenID,
 				command.Meta.CommandID,
@@ -75,7 +80,7 @@ func (s *CommandService) IssueRtcToken(ctx context.Context, command IssueRtcToke
 				command.CanPublish,
 				command.CanSubscribe,
 				issuedAt,
-				issuedToken.ExpiresAt,
+				expiresAt,
 			)
 			if createErr != nil {
 				return fmt.Errorf("create grant: %w", createErr)

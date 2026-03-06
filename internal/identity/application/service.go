@@ -207,7 +207,9 @@ func (s *Service) Logout(ctx context.Context, command LogoutCommand) error {
 	if strings.TrimSpace(command.RefreshToken) != "" {
 		refreshClaims, err := s.tokens.ParseToken(command.RefreshToken, TokenTypeRefresh)
 		if err == nil {
-			_ = s.revocations.MarkRevoked(ctx, refreshClaims.TokenID, refreshClaims.ExpiresAt)
+			if revokeErr := s.revocations.MarkRevoked(ctx, refreshClaims.TokenID, refreshClaims.ExpiresAt); revokeErr != nil {
+				return revokeErr
+			}
 		}
 	}
 

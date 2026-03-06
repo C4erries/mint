@@ -23,7 +23,7 @@ help:
 	@echo "  make lint       - run golangci-lint"
 	@echo "  make lint-fix   - run golangci-lint with auto-fixes"
 	@echo "  make proto      - generate Go code from proto files"
-	@echo "  make proto-check- verify proto-generated files are up to date"
+	@echo "  make proto-check - verify proto-generated files are up to date"
 	@echo "  make rtc-up     - start RTC docker stack"
 	@echo "  make rtc-down   - stop RTC docker stack"
 	@echo "  make rtc-smoke  - run RTC smoke tests (requires docker stack)"

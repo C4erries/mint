@@ -33,6 +33,22 @@ func NewCommandService(
 	livekit LiveKitClient,
 	options CommandServiceOptions,
 ) (*CommandService, error) {
+	if rooms == nil {
+		return nil, fmt.Errorf("voice room write repository is required: %w", ErrInvalidCommand)
+	}
+
+	if grants == nil {
+		return nil, fmt.Errorf("media access grant repository is required: %w", ErrInvalidCommand)
+	}
+
+	if permissions == nil {
+		return nil, fmt.Errorf("permission checker is required: %w", ErrInvalidCommand)
+	}
+
+	if livekit == nil {
+		return nil, fmt.Errorf("livekit client is required: %w", ErrInvalidCommand)
+	}
+
 	if options.DefaultTokenTTL <= 0 {
 		return nil, fmt.Errorf("default token ttl must be > 0: %w", ErrInvalidCommand)
 	}

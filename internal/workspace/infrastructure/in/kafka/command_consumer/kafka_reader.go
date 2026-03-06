@@ -54,11 +54,13 @@ func NewKafkaReader(cfg KafkaReaderConfig, factory KafkaReaderFactory) (*KafkaRe
 		return nil, fmt.Errorf("kafka brokers are required")
 	}
 
-	if cfg.Topic == "" {
+	topic := strings.TrimSpace(cfg.Topic)
+	if topic == "" {
 		return nil, fmt.Errorf("kafka topic is required")
 	}
 
-	if cfg.GroupID == "" {
+	groupID := strings.TrimSpace(cfg.GroupID)
+	if groupID == "" {
 		return nil, fmt.Errorf("kafka group id is required")
 	}
 
@@ -83,8 +85,8 @@ func NewKafkaReader(cfg KafkaReaderConfig, factory KafkaReaderFactory) (*KafkaRe
 
 	readerConfig := kafka.ReaderConfig{
 		Brokers:        brokers,
-		GroupID:        cfg.GroupID,
-		Topic:          cfg.Topic,
+		GroupID:        groupID,
+		Topic:          topic,
 		MinBytes:       minBytes,
 		MaxBytes:       maxBytes,
 		StartOffset:    startOffset,

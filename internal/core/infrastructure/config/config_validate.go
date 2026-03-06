@@ -50,6 +50,10 @@ func validateConfig(cfg Config) error {
 		return fmt.Errorf("MINT_REDIS_ADDR must not be empty")
 	}
 
+	if cfg.RedisDB < 0 {
+		return fmt.Errorf("MINT_REDIS_DB must be >= 0")
+	}
+
 	if strings.TrimSpace(cfg.RedisKeyPrefix) == "" {
 		return fmt.Errorf("MINT_REDIS_KEY_PREFIX must not be empty")
 	}

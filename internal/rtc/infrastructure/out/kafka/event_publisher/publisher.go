@@ -86,6 +86,10 @@ func NewPublisher(producer KafkaProducer, topic string) *Publisher {
 }
 
 func (p *Publisher) Publish(ctx context.Context, message application.OutboxMessage) error {
+	if p == nil || p.producer == nil {
+		return fmt.Errorf("kafka producer is not configured")
+	}
+
 	rawMessage, err := json.Marshal(message)
 	if err != nil {
 		return fmt.Errorf("marshal outbox message: %w", err)

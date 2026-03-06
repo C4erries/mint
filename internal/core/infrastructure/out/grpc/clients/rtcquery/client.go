@@ -79,7 +79,9 @@ func NewClient(options Options) (*Client, error) {
 			dialOptions = append(dialOptions, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		}
 
-		connection, err := dialContext(context.Background(), address, dialOptions...)
+		dialCtx, cancel := context.WithTimeout(context.Background(), timeout)
+		connection, err := dialContext(dialCtx, address, dialOptions...)
+		cancel()
 		if err != nil {
 			return nil, fmt.Errorf("dial rtc grpc server: %w", err)
 		}

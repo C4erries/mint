@@ -89,18 +89,30 @@ func (h *Handler) handleEvent(ctx context.Context, event *livekit.WebhookEvent) 
 
 	switch event.GetEvent() {
 	case webhook.EventParticipantJoined:
+		if h.commands == nil {
+			return fmt.Errorf("command service is not configured")
+		}
+
 		if userID == fallbackActorID {
 			return application.ErrInvalidCommand
 		}
 
 		return h.commands.JoinVoiceChannel(ctx, application.JoinVoiceChannelCommand{Meta: meta, UserID: userID})
 	case webhook.EventParticipantLeft, webhook.EventParticipantConnectionAborted:
+		if h.commands == nil {
+			return fmt.Errorf("command service is not configured")
+		}
+
 		if userID == fallbackActorID {
 			return application.ErrInvalidCommand
 		}
 
 		return h.commands.LeaveVoiceChannel(ctx, application.LeaveVoiceChannelCommand{Meta: meta, UserID: userID})
 	case webhook.EventRoomFinished:
+		if h.commands == nil {
+			return fmt.Errorf("command service is not configured")
+		}
+
 		return h.commands.TerminateVoiceSession(ctx, application.TerminateVoiceSessionCommand{Meta: meta})
 	default:
 		h.logger.Debug("skip unsupported livekit callback", slog.String("event_type", event.GetEvent()))

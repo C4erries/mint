@@ -86,6 +86,7 @@ func NewKafkaGoProducer(cfg KafkaGoProducerConfig, factory KafkaWriterFactory) (
 }
 
 func (p *KafkaGoProducer) Publish(ctx context.Context, topic string, key string, value []byte) error {
+	topic = strings.TrimSpace(topic)
 	if topic == "" {
 		return fmt.Errorf("kafka topic is required")
 	}

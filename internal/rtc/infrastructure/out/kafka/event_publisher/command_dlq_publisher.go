@@ -20,11 +20,12 @@ func NewCommandDLQPublisher(producer KafkaProducer, topic string) (*CommandDLQPu
 		return nil, fmt.Errorf("kafka producer is required")
 	}
 
-	if strings.TrimSpace(topic) == "" {
+	trimmedTopic := strings.TrimSpace(topic)
+	if trimmedTopic == "" {
 		return nil, fmt.Errorf("rtc command dlq topic is required")
 	}
 
-	return &CommandDLQPublisher{producer: producer, topic: topic}, nil
+	return &CommandDLQPublisher{producer: producer, topic: trimmedTopic}, nil
 }
 
 func (p *CommandDLQPublisher) Publish(ctx context.Context, message *commandconsumer.DeadLetterMessage) error {

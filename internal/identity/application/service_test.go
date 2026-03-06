@@ -140,6 +140,26 @@ func (s *inMemoryRevocationStore) Close() error {
 	return nil
 }
 
+type failingRevocationStore struct {
+	err error
+}
+
+func (s *failingRevocationStore) MarkRevoked(_ context.Context, _ string, _ time.Time) error {
+	return s.err
+}
+
+func (s *failingRevocationStore) IsRevoked(_ context.Context, _ string) (bool, error) {
+	return false, nil
+}
+
+func (s *failingRevocationStore) Ping(_ context.Context) error {
+	return nil
+}
+
+func (s *failingRevocationStore) Close() error {
+	return nil
+}
+
 type fakeHasher struct{}
 
 func (fakeHasher) Hash(password string) (string, error) {
@@ -332,6 +352,35 @@ func TestService_LogoutRevokesSessionAndAccessToken(t *testing.T) {
 	session, sessionErr := sessions.GetSessionByRefreshJTI(context.Background(), parseTokenID(registerResult.RefreshToken))
 	require.NoError(t, sessionErr)
 	require.True(t, session.IsRevoked())
+}
+
+func TestService_Logout_ReturnsRevocationError(t *testing.T) {
+	t.Parallel()
+
+	expectedErr := errors.New("revocation unavailable")
+
+	service, err := NewService(
+		newInMemoryAccountRepo(),
+		newInMemorySessionRepo(),
+		&failingRevocationStore{err: expectedErr},
+		fakeHasher{},
+		&fakeTokenManager{},
+		ServiceOptions{
+			IDGenerator:     func() string { return "id-1" },
+			Now:             func() time.Time { return time.Now().UTC() },
+			AccessTokenTTL:  15 * time.Minute,
+			RefreshTokenTTL: 2 * time.Hour,
+		},
+	)
+	require.NoError(t, err)
+
+	logoutErr := service.Logout(context.Background(), LogoutCommand{
+		AccessClaims: TokenClaims{
+			TokenID:   "token-1",
+			SessionID: "session-1",
+		},
+	})
+	require.ErrorIs(t, logoutErr, expectedErr)
 }
 
 func parseTokenID(raw string) string {
