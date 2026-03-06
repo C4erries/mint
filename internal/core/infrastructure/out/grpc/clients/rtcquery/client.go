@@ -59,6 +59,7 @@ func NewClient(options Options) (*Client, error) {
 	}
 
 	client := options.Client
+
 	closer := options.Closer
 	if client == nil {
 		address := strings.TrimSpace(options.Address)
@@ -72,6 +73,7 @@ func NewClient(options Options) (*Client, error) {
 		}
 
 		dialOptions := make([]grpc.DialOption, 0, len(options.DialOptions)+1)
+
 		dialOptions = append(dialOptions, options.DialOptions...)
 		if len(dialOptions) == 0 {
 			dialOptions = append(dialOptions, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -95,6 +97,7 @@ func NewClient(options Options) (*Client, error) {
 
 func (c *Client) GetVoiceRoomState(ctx context.Context, workspaceID string, channelID string) (*rtcv1.GetVoiceRoomStateResponse, error) {
 	var response *rtcv1.GetVoiceRoomStateResponse
+
 	err := c.callWithRetry(ctx, func(callCtx context.Context) error {
 		result, err := c.client.GetVoiceRoomState(callCtx, &rtcv1.GetVoiceRoomStateRequest{WorkspaceId: workspaceID, ChannelId: channelID})
 		if err != nil {
@@ -102,6 +105,7 @@ func (c *Client) GetVoiceRoomState(ctx context.Context, workspaceID string, chan
 		}
 
 		response = result
+
 		return nil
 	})
 
@@ -110,6 +114,7 @@ func (c *Client) GetVoiceRoomState(ctx context.Context, workspaceID string, chan
 
 func (c *Client) ListVoiceParticipants(ctx context.Context, roomID string) (*rtcv1.ListVoiceParticipantsResponse, error) {
 	var response *rtcv1.ListVoiceParticipantsResponse
+
 	err := c.callWithRetry(ctx, func(callCtx context.Context) error {
 		result, err := c.client.ListVoiceParticipants(callCtx, &rtcv1.ListVoiceParticipantsRequest{RoomId: roomID})
 		if err != nil {
@@ -117,6 +122,7 @@ func (c *Client) ListVoiceParticipants(ctx context.Context, roomID string) (*rtc
 		}
 
 		response = result
+
 		return nil
 	})
 
@@ -125,6 +131,7 @@ func (c *Client) ListVoiceParticipants(ctx context.Context, roomID string) (*rtc
 
 func (c *Client) GetVoiceChannelBinding(ctx context.Context, workspaceID string, channelID string) (*rtcv1.GetVoiceChannelBindingResponse, error) {
 	var response *rtcv1.GetVoiceChannelBindingResponse
+
 	err := c.callWithRetry(ctx, func(callCtx context.Context) error {
 		result, err := c.client.GetVoiceChannelBinding(callCtx, &rtcv1.GetVoiceChannelBindingRequest{WorkspaceId: workspaceID, ChannelId: channelID})
 		if err != nil {
@@ -132,6 +139,7 @@ func (c *Client) GetVoiceChannelBinding(ctx context.Context, workspaceID string,
 		}
 
 		response = result
+
 		return nil
 	})
 
@@ -140,6 +148,7 @@ func (c *Client) GetVoiceChannelBinding(ctx context.Context, workspaceID string,
 
 func (c *Client) GetRtcTokenGrantStatus(ctx context.Context, tokenID string) (*rtcv1.GetRtcTokenGrantStatusResponse, error) {
 	var response *rtcv1.GetRtcTokenGrantStatusResponse
+
 	err := c.callWithRetry(ctx, func(callCtx context.Context) error {
 		result, err := c.client.GetRtcTokenGrantStatus(callCtx, &rtcv1.GetRtcTokenGrantStatusRequest{TokenId: tokenID})
 		if err != nil {
@@ -147,6 +156,7 @@ func (c *Client) GetRtcTokenGrantStatus(ctx context.Context, tokenID string) (*r
 		}
 
 		response = result
+
 		return nil
 	})
 
@@ -158,6 +168,7 @@ func (c *Client) callWithRetry(ctx context.Context, call func(callCtx context.Co
 	for attempt := 1; attempt <= attempts; attempt++ {
 		callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 		err := call(callCtx)
+
 		cancel()
 
 		if err == nil {

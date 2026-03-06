@@ -63,6 +63,7 @@ func (c *Container) Shutdown(ctx context.Context) error {
 	}
 
 	grpcStopped := make(chan struct{})
+
 	go func() {
 		c.grpcServer.GracefulStop()
 		close(grpcStopped)
@@ -91,6 +92,7 @@ func (c *Container) Close() error {
 	}
 
 	var closeErr error
+
 	for index := len(c.closers) - 1; index >= 0; index-- {
 		if err := c.closers[index].Close(); err != nil {
 			closeErr = errors.Join(closeErr, err)
@@ -102,6 +104,7 @@ func (c *Container) Close() error {
 
 func runReadinessChecks(ctx context.Context, checks []readinessCheck) error {
 	var readinessErr error
+
 	for _, check := range checks {
 		if err := check.check(ctx); err != nil {
 			readinessErr = errors.Join(readinessErr, fmt.Errorf("%s: %w", check.name, err))

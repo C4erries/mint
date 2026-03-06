@@ -30,6 +30,7 @@ func RequireAuth(parser AccessTokenParser) gin.HandlerFunc {
 		}
 
 		rawToken := strings.TrimSpace(authorization[len("Bearer "):])
+
 		claims, err := parser.ParseAccessToken(rawToken)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
@@ -47,23 +48,27 @@ func RequireAuth(parser AccessTokenParser) gin.HandlerFunc {
 func MustAccountID(c *gin.Context) string {
 	value, _ := c.Get(ContextAccountIDKey)
 	accountID, _ := value.(string)
+
 	return accountID
 }
 
 func MustSessionID(c *gin.Context) string {
 	value, _ := c.Get(ContextSessionIDKey)
 	sessionID, _ := value.(string)
+
 	return sessionID
 }
 
 func MustTokenID(c *gin.Context) string {
 	value, _ := c.Get(ContextTokenIDKey)
 	tokenID, _ := value.(string)
+
 	return tokenID
 }
 
 func MustClaims(c *gin.Context) identityapp.TokenClaims {
 	value, _ := c.Get(ContextTokenKey)
 	claims, _ := value.(identityapp.TokenClaims)
+
 	return claims
 }

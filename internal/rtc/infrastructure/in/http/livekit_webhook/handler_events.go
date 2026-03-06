@@ -128,6 +128,7 @@ func roomScope(event *livekit.WebhookEvent) (string, string, error) {
 	participant := event.GetParticipant()
 	if participant != nil {
 		workspaceID := strings.TrimSpace(participant.GetAttributes()["workspace_id"])
+
 		channelID := strings.TrimSpace(participant.GetAttributes()["channel_id"])
 		if workspaceID != "" && channelID != "" {
 			return workspaceID, channelID, nil

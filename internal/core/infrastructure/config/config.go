@@ -108,6 +108,7 @@ func LoadFromEnv() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+
 	cfg.ShutdownGracePeriod = shutdownGracePeriod
 
 	cfg.KafkaBrokers = csvEnvOrDefault("MINT_KAFKA_BROKERS", cfg.KafkaBrokers)
@@ -120,12 +121,14 @@ func LoadFromEnv() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+
 	cfg.OutboxPollInterval = outboxPollInterval
 
 	outboxBatchSize, err := intEnvOrDefault("MINT_CORE_OUTBOX_BATCH_SIZE", cfg.OutboxBatchSize)
 	if err != nil {
 		return Config{}, err
 	}
+
 	cfg.OutboxBatchSize = outboxBatchSize
 
 	cfg.RedisAddr = stringEnvOrDefault("MINT_REDIS_ADDR", cfg.RedisAddr)
@@ -135,6 +138,7 @@ func LoadFromEnv() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+
 	cfg.RedisDB = redisDB
 	cfg.RedisKeyPrefix = stringEnvOrDefault("MINT_REDIS_KEY_PREFIX", cfg.RedisKeyPrefix)
 
@@ -144,6 +148,7 @@ func LoadFromEnv() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+
 	cfg.ScyllaPort = scyllaPort
 	cfg.ScyllaKeyspace = stringEnvOrDefault("MINT_SCYLLA_KEYSPACE", cfg.ScyllaKeyspace)
 	cfg.ScyllaConsistency = stringEnvOrDefault("MINT_SCYLLA_CONSISTENCY", cfg.ScyllaConsistency)
@@ -152,6 +157,7 @@ func LoadFromEnv() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+
 	cfg.ScyllaAutoCreateSchema = autoCreateSchema
 
 	cfg.JWTAccessSecret = stringEnvOrDefault("MINT_CORE_JWT_ACCESS_SECRET", cfg.JWTAccessSecret)
@@ -161,12 +167,14 @@ func LoadFromEnv() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+
 	cfg.JWTAccessTTL = accessTTL
 
 	refreshTTL, err := durationEnvOrDefault("MINT_CORE_JWT_REFRESH_TTL", cfg.JWTRefreshTTL)
 	if err != nil {
 		return Config{}, err
 	}
+
 	cfg.JWTRefreshTTL = refreshTTL
 
 	cfg.RTCGRPCAddr = stringEnvOrDefault("MINT_RTC_GRPC_ADDR", cfg.RTCGRPCAddr)
@@ -175,18 +183,21 @@ func LoadFromEnv() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+
 	cfg.RTCGRPCTimeout = rtcTimeout
 
 	rtcMaxRetries, err := intEnvOrDefault("MINT_CORE_RTC_GRPC_MAX_RETRIES", cfg.RTCGRPCMaxRetries)
 	if err != nil {
 		return Config{}, err
 	}
+
 	cfg.RTCGRPCMaxRetries = rtcMaxRetries
 
 	rtcRetryBackoff, err := durationEnvOrDefault("MINT_CORE_RTC_GRPC_RETRY_BACKOFF", cfg.RTCGRPCRetryBackoff)
 	if err != nil {
 		return Config{}, err
 	}
+
 	cfg.RTCGRPCRetryBackoff = rtcRetryBackoff
 
 	if err = validateConfig(cfg); err != nil {

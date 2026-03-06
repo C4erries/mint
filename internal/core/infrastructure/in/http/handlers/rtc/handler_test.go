@@ -35,6 +35,7 @@ func (p *fakePublisher) Publish(_ context.Context, topic string, key string, val
 	copyValue := make([]byte, len(value))
 	copy(copyValue, value)
 	p.messages = append(p.messages, capturedMessage{topic: topic, key: key, value: copyValue})
+
 	return nil
 }
 
@@ -44,6 +45,7 @@ func (p *fakePublisher) LastMessage(t *testing.T) capturedMessage {
 	defer p.mu.Unlock()
 
 	require.NotEmpty(t, p.messages)
+
 	return p.messages[len(p.messages)-1]
 }
 
@@ -113,6 +115,7 @@ func TestHandler_CommandMapping(t *testing.T) {
 			handler.RegisterRoutes(group)
 
 			body := strings.NewReader(testCase.body)
+
 			request := httptest.NewRequest(http.MethodPost, testCase.path, body)
 			if testCase.body != "" {
 				request.Header.Set("Content-Type", "application/json")
@@ -129,6 +132,7 @@ func TestHandler_CommandMapping(t *testing.T) {
 			require.Equal(t, testCase.expectedKey, message.key)
 
 			var envelope map[string]any
+
 			err := json.Unmarshal(message.value, &envelope)
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectedType, envelope["type"])

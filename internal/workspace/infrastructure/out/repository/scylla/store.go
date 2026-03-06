@@ -113,6 +113,7 @@ func (s *Store) Close() error {
 	}
 
 	s.session.Close()
+
 	return nil
 }
 
@@ -345,6 +346,7 @@ func (s *Store) getChannel(ctx context.Context, workspaceID string, channelID st
 
 func (s *Store) getMember(ctx context.Context, workspaceID string, userID string) (domain.Member, error) {
 	var rolesJSON string
+
 	member := domain.Member{}
 	if err := s.session.Query(
 		"SELECT workspace_id, user_id, joined_at, banned, roles_json FROM "+membersTable+" WHERE workspace_id = ? AND user_id = ?",
@@ -445,6 +447,7 @@ func (s *Store) listOverrides(ctx context.Context, workspaceID string, channelID
 	).WithContext(ctx).Iter()
 
 	overrides := make([]domain.ChannelOverride, 0)
+
 	var override domain.ChannelOverride
 	for iter.Scan(&override.WorkspaceID, &override.ChannelID, &override.SubjectType, &override.SubjectID, &override.AllowMask, &override.DenyMask, &override.UpdatedAt) {
 		overrides = append(overrides, override)
@@ -462,6 +465,7 @@ func sortedKeys[T any](value map[string]T) []string {
 	for key := range value {
 		keys = append(keys, key)
 	}
+
 	sort.Strings(keys)
 
 	return keys

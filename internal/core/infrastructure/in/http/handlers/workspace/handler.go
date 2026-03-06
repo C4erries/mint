@@ -71,6 +71,7 @@ func (h *Handler) createWorkspace(c *gin.Context) {
 
 	workspaceID := h.idGenerator()
 	commandMeta := h.buildMeta(c, workspaceID, "")
+
 	payload := map[string]any{"workspace_name": strings.TrimSpace(request.Name)}
 	if payload["workspace_name"] == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "workspace name is required"})
@@ -104,6 +105,7 @@ func (h *Handler) createChannel(c *gin.Context) {
 
 	channelID := h.idGenerator()
 	commandMeta := h.buildMeta(c, workspaceID, channelID)
+
 	payload := map[string]any{"channel_name": strings.TrimSpace(request.Name), "channel_kind": strings.TrimSpace(request.Kind)}
 	if payload["channel_name"] == "" || payload["channel_kind"] == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "channel name and kind are required"})
@@ -125,6 +127,7 @@ func (h *Handler) createChannel(c *gin.Context) {
 
 func (h *Handler) joinWorkspace(c *gin.Context) {
 	workspaceID := c.Param("workspace_id")
+
 	action := c.Param("user_action")
 	if workspaceID == "" || action == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "workspace_id and user action are required"})
@@ -139,6 +142,7 @@ func (h *Handler) joinWorkspace(c *gin.Context) {
 
 	userID := parts[0]
 	commandMeta := h.buildMeta(c, workspaceID, "")
+
 	payload := map[string]any{"user_id": userID}
 	if err := h.publishCommand(c.Request.Context(), domain.CommandJoinWorkspace, commandMeta, payload, workspaceID+":"+userID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to publish command"})
@@ -199,6 +203,7 @@ func (h *Handler) buildMeta(c *gin.Context, workspaceID string, channelID string
 
 	commandID := h.idGenerator()
 	messageID := h.idGenerator()
+
 	return workspaceapp.CommandMeta{
 		CommandID:     commandID,
 		CorrelationID: correlationID,

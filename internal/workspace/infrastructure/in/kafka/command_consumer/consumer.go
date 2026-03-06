@@ -50,6 +50,7 @@ func (c *Consumer) Run(ctx context.Context) error {
 			}
 
 			c.logger.Error("failed to poll workspace command", slog.String("error", err.Error()))
+
 			continue
 		}
 

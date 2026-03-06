@@ -127,6 +127,7 @@ func LoadFromEnv() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+
 	cfg.DefaultTokenTTL = tokenTTL
 
 	shutdownGracePeriod, err := durationEnvOrDefault("MINT_RTC_SHUTDOWN_GRACE_PERIOD", cfg.ShutdownGracePeriod)
@@ -192,12 +193,14 @@ func LoadFromEnv() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+
 	cfg.PermissionMaxRetries = permissionMaxRetries
 
 	permissionRetryBackoff, err := durationEnvOrDefault("MINT_PERMISSION_RETRY_BACKOFF", cfg.PermissionRetryBackoff)
 	if err != nil {
 		return Config{}, err
 	}
+
 	cfg.PermissionRetryBackoff = permissionRetryBackoff
 
 	if err := validateConfig(cfg); err != nil {

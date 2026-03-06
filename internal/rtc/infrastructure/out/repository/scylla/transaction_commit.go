@@ -31,18 +31,21 @@ func (t *transaction) commitWriteBatch(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
 	entries += added
 
 	added, err = t.appendBindingQueries(batch)
 	if err != nil {
 		return err
 	}
+
 	entries += added
 
 	added, err = t.appendOutboxQueries(batch)
 	if err != nil {
 		return err
 	}
+
 	entries += added
 
 	if entries == 0 {

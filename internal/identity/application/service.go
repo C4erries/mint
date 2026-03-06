@@ -82,6 +82,7 @@ func (s *Service) Register(ctx context.Context, command RegisterCommand) (AuthRe
 	}
 
 	now := s.now().UTC()
+
 	account, err := domain.NewAccount(s.idGenerator(), command.Email, passwordHash, now)
 	if err != nil {
 		return AuthResult{}, mapDomainValidationError(err)
@@ -284,6 +285,7 @@ func (s *Service) issueSessionTokens(ctx context.Context, account domain.Account
 
 func validateAuthCommand(email string, password string) error {
 	trimmedEmail := strings.TrimSpace(email)
+
 	trimmedPassword := strings.TrimSpace(password)
 	if trimmedEmail == "" || trimmedPassword == "" {
 		return ErrInvalidCommand

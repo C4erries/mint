@@ -57,6 +57,7 @@ func (m *Manager) IssueToken(accountID string, sessionID string, tokenType appli
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
 	raw, err := token.SignedString(m.secretForType(tokenType))
 	if err != nil {
 		return application.IssuedToken{}, fmt.Errorf("sign jwt token: %w", err)
@@ -82,6 +83,7 @@ func (m *Manager) ParseToken(rawToken string, expectedType application.TokenType
 	}
 
 	claims := &tokenClaims{}
+
 	token, err := jwt.ParseWithClaims(trimmed, claims, func(token *jwt.Token) (interface{}, error) {
 		if token.Method.Alg() != jwt.SigningMethodHS256.Alg() {
 			return nil, application.ErrTokenInvalid

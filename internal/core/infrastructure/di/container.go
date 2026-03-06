@@ -77,6 +77,7 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 	if err != nil {
 		return nil, fmt.Errorf("build identity scylla store: %w", err)
 	}
+
 	closers = append(closers, identityStore)
 
 	revocationStore, err := redisrepo.NewRevocationStore(redisrepo.Options{
@@ -89,6 +90,7 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 		cleanup()
 		return nil, fmt.Errorf("build identity redis revocation store: %w", err)
 	}
+
 	closers = append(closers, revocationStore)
 
 	jwtTokenManager, err := jwtmanager.NewManager(cfg.JWTAccessSecret, cfg.JWTRefreshSecret, id.New)
@@ -98,6 +100,7 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 	}
 
 	hasher := passwordhasher.NewBcryptHasher(0)
+
 	identityService, err := identityapp.NewService(identityStore, identityStore, revocationStore, hasher, jwtTokenManager, identityapp.ServiceOptions{
 		IDGenerator:     id.New,
 		Now:             time.Now,
@@ -121,6 +124,7 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 		cleanup()
 		return nil, fmt.Errorf("build workspace scylla store: %w", err)
 	}
+
 	closers = append(closers, workspaceStore)
 
 	workspaceCommandService, err := workspaceapp.NewCommandService(workspaceStore, workspaceapp.CommandServiceOptions{
@@ -133,6 +137,7 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 	}
 
 	workspaceQueryService := workspaceapp.NewQueryService(workspaceStore)
+
 	permissionService, err := workspaceapp.NewPermissionService(workspaceStore, workspaceapp.NewBaselinePermissionEvaluator())
 	if err != nil {
 		cleanup()
@@ -144,9 +149,11 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 		cleanup()
 		return nil, fmt.Errorf("build kafka producer: %w", err)
 	}
+
 	closers = append(closers, kafkaProducer)
 
 	workspaceOutboxPublisher := workspacepublisher.NewPublisher(kafkaProducer, cfg.WorkspaceEventsTopic)
+
 	outboxRelay, err := workspacepublisher.NewOutboxRelay(workspaceStore, workspaceOutboxPublisher, logger, cfg.OutboxBatchSize)
 	if err != nil {
 		cleanup()
@@ -163,6 +170,7 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 		cleanup()
 		return nil, fmt.Errorf("build workspace kafka reader: %w", err)
 	}
+
 	closers = append(closers, workspaceReader)
 
 	consumer := workspaceconsumer.New(workspaceReader, workspaceCommandService, logger)
@@ -177,6 +185,7 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 		cleanup()
 		return nil, fmt.Errorf("build rtc gRPC query client: %w", err)
 	}
+
 	closers = append(closers, rtcQueryClient)
 
 	authHTTPHandler := authhandler.NewHandler(identityService)
@@ -197,6 +206,7 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 		ReadinessCheck: func(ctx context.Context) error {
 			readyCtx, cancel := context.WithTimeout(ctx, readinessTimeout)
 			defer cancel()
+
 			return runReadinessChecks(readyCtx, readinessChecks)
 		},
 	})

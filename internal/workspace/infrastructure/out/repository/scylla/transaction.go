@@ -53,6 +53,7 @@ func (t *transaction) GetWorkspace(ctx context.Context, workspaceID string) (dom
 	}
 
 	t.workspaces[workspaceID] = workspace
+
 	return workspace, nil
 }
 
@@ -63,6 +64,7 @@ func (t *transaction) SaveWorkspace(ctx context.Context, workspace domain.Worksp
 
 	t.workspaces[workspace.ID] = workspace
 	t.dirtyWorkspaces[workspace.ID] = struct{}{}
+
 	return nil
 }
 
@@ -82,6 +84,7 @@ func (t *transaction) GetChannel(ctx context.Context, workspaceID string, channe
 	}
 
 	t.channels[key] = channel
+
 	return channel, nil
 }
 
@@ -93,6 +96,7 @@ func (t *transaction) SaveChannel(ctx context.Context, channel domain.Channel) e
 	key := channelKey(channel.WorkspaceID, channel.ID)
 	t.channels[key] = channel
 	t.dirtyChannels[key] = struct{}{}
+
 	return nil
 }
 
@@ -112,6 +116,7 @@ func (t *transaction) GetMember(ctx context.Context, workspaceID string, userID 
 	}
 
 	t.members[key] = member
+
 	return member, nil
 }
 
@@ -123,6 +128,7 @@ func (t *transaction) SaveMember(ctx context.Context, member domain.Member) erro
 	key := memberKey(member.WorkspaceID, member.UserID)
 	t.members[key] = member
 	t.dirtyMembers[key] = struct{}{}
+
 	return nil
 }
 
@@ -136,6 +142,7 @@ func (t *transaction) AppendOutbox(ctx context.Context, message application.Outb
 	}
 
 	t.outbox = append(t.outbox, message)
+
 	return nil
 }
 
@@ -149,6 +156,7 @@ func (t *transaction) IsCommandProcessed(ctx context.Context, commandID string) 
 	}
 
 	var storedCommandID string
+
 	err := t.store.session.Query(
 		"SELECT command_id FROM "+processedCommandsTable+" WHERE command_id = ?",
 		commandID,
@@ -174,6 +182,7 @@ func (t *transaction) MarkCommandProcessed(ctx context.Context, commandID string
 	}
 
 	t.commandsToMark[commandID] = struct{}{}
+
 	return nil
 }
 
@@ -191,6 +200,7 @@ func (t *transaction) commit(ctx context.Context) error {
 			workspace.CreatedAt,
 			workspace.UpdatedAt,
 		)
+
 		entries++
 	}
 
@@ -205,11 +215,13 @@ func (t *transaction) commit(ctx context.Context) error {
 			channel.CreatedAt,
 			channel.UpdatedAt,
 		)
+
 		entries++
 	}
 
 	for _, key := range sortedKeys(t.dirtyMembers) {
 		member := t.members[key]
+
 		rolesJSON, err := json.Marshal(member.RoleIDs)
 		if err != nil {
 			return fmt.Errorf("marshal member roles: %w", err)
@@ -223,6 +235,7 @@ func (t *transaction) commit(ctx context.Context) error {
 			member.Banned,
 			string(rolesJSON),
 		)
+
 		entries++
 	}
 
@@ -248,6 +261,7 @@ func (t *transaction) commit(ctx context.Context) error {
 			string(payloadJSON),
 			false,
 		)
+
 		entries++
 	}
 
@@ -258,6 +272,7 @@ func (t *transaction) commit(ctx context.Context) error {
 			commandID,
 			processedAt,
 		)
+
 		entries++
 	}
 

@@ -30,6 +30,7 @@ func (r *inMemoryAccountRepo) CreateAccount(_ context.Context, account domain.Ac
 
 	r.byID[account.ID] = account
 	r.byEmail[account.Email] = account.ID
+
 	return nil
 }
 
@@ -63,6 +64,7 @@ func newInMemorySessionRepo() *inMemorySessionRepo {
 func (r *inMemorySessionRepo) CreateSession(_ context.Context, session domain.Session) error {
 	r.byID[session.ID] = session
 	r.byRefreshJTI[session.RefreshJTI] = session.ID
+
 	return nil
 }
 
@@ -87,10 +89,12 @@ func (r *inMemorySessionRepo) UpdateSessionRefresh(_ context.Context, sessionID 
 	}
 
 	delete(r.byRefreshJTI, oldRefreshJTI)
+
 	session.RefreshJTI = newRefreshJTI
 	session.ExpiresAt = expiresAt
 	r.byID[sessionID] = session
 	r.byRefreshJTI[newRefreshJTI] = sessionID
+
 	return nil
 }
 
@@ -102,6 +106,7 @@ func (r *inMemorySessionRepo) RevokeSession(_ context.Context, sessionID string,
 
 	session.RevokedAt = &revokedAt
 	r.byID[sessionID] = session
+
 	return nil
 }
 
@@ -264,7 +269,6 @@ func TestService_RegisterAndLogin(t *testing.T) {
 	require.NotEmpty(t, registerResult.RefreshToken)
 
 	for _, testCase := range testCases {
-		testCase := testCase
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 

@@ -111,6 +111,7 @@ type issueTokenRequest struct {
 
 func (h *Handler) issueToken(c *gin.Context) {
 	workspaceID := c.Param("workspace_id")
+
 	channelID := c.Param("channel_id")
 	if workspaceID == "" || channelID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "workspace_id and channel_id are required"})
@@ -146,6 +147,7 @@ func (h *Handler) issueToken(c *gin.Context) {
 
 func (h *Handler) publishSimpleUserCommand(c *gin.Context, commandType string) {
 	workspaceID := c.Param("workspace_id")
+
 	channelID := c.Param("channel_id")
 	if workspaceID == "" || channelID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "workspace_id and channel_id are required"})
@@ -196,6 +198,7 @@ func (h *Handler) buildMeta(c *gin.Context, workspaceID string, channelID string
 	}
 
 	messageID := h.idGenerator()
+
 	return workspaceapp.CommandMeta{
 		CommandID:     h.idGenerator(),
 		CorrelationID: correlationID,

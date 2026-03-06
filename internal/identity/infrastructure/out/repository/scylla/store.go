@@ -101,6 +101,7 @@ func (s *Store) Close() error {
 	}
 
 	s.session.Close()
+
 	return nil
 }
 
@@ -211,8 +212,11 @@ func (s *Store) GetSessionByRefreshJTI(ctx context.Context, refreshJTI string) (
 		return domain.Session{}, fmt.Errorf("query session by refresh index: %w", err)
 	}
 
-	var session domain.Session
-	var revokedAt *time.Time
+	var (
+		session   domain.Session
+		revokedAt *time.Time
+	)
+
 	if err := s.session.Query(
 		"SELECT session_id, account_id, refresh_jti, user_agent, ip, created_at, expires_at, revoked_at FROM "+sessionsTable+" WHERE session_id = ?",
 		sessionID,

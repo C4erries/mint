@@ -49,6 +49,7 @@ func (s *CommandService) CreateWorkspace(ctx context.Context, command CreateWork
 		}
 
 		now := s.now().UTC()
+
 		workspace, err := domain.NewWorkspace(command.Meta.WorkspaceID, command.WorkspaceName, command.Meta.ActorID, now)
 		if err != nil {
 			return mapDomainWriteError(err)
@@ -210,6 +211,7 @@ func (s *CommandService) BanMember(ctx context.Context, command BanMemberCommand
 		}
 
 		member.Ban()
+
 		if err = tx.SaveMember(ctx, member); err != nil {
 			return err
 		}
