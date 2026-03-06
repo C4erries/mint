@@ -1,0 +1,17 @@
+with-expecter: true
+keeptree: false
+dir: "{{.InterfaceDir}}/mocks"
+outpkg: "mocks"
+filename: "{{.InterfaceName}}.go"
+mockname: "{{.InterfaceName}}"
+packages:
+  github.com/c4erries/mint/internal/rtc/application:
+    interfaces:
+      VoiceRoomWriteRepository:
+      VoiceRoomWriteTx:
+      VoiceRoomReadRepository:
+      OutboxStore:
+      EventPublisher:
+      PermissionChecker:
+      LiveKitClient:
+      MediaAccessGrantRepository:

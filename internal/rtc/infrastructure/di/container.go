@@ -1,6 +1,7 @@
 package di
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"time"
 
+	rtcv1 "github.com/c4erries/mint/api/rtc/v1"
 	"github.com/c4erries/mint/internal/rtc/application"
 	"github.com/c4erries/mint/internal/rtc/infrastructure/config"
 	queryserver "github.com/c4erries/mint/internal/rtc/infrastructure/in/grpc/query_server"
@@ -25,16 +27,17 @@ import (
 	grpcHealthV1 "google.golang.org/grpc/health/grpc_health_v1"
 )
 
-// Container assembles rtc-api dependency graph.
+// Container assembles rtc-api dependency graph and controls runtime lifecycle.
 type Container struct {
-	HTTPServer      *http.Server
-	GRPCServer      *grpc.Server
-	GRPCListener    net.Listener
-	CommandConsumer *commandconsumer.Consumer
-	OutboxRelay     *eventpublisher.OutboxRelay
-	QueryServer     *queryserver.Server
+	httpServer      *http.Server
+	grpcServer      *grpc.Server
+	grpcListener    net.Listener
+	commandConsumer *commandconsumer.Consumer
+	outboxRelay     *eventpublisher.OutboxRelay
 
-	closers []io.Closer
+	outboxPollInterval time.Duration
+	closers            []io.Closer
+	logger             *slog.Logger
 }
 
 func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
@@ -76,7 +79,16 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 	closers = append(closers, grantStore)
 
 	permissionClient := grpcclients.NewPermissionClient()
-	liveKitClient := livekitclient.NewTokenClient(cfg.LiveKitAPIKey, cfg.LiveKitAPISecret, time.Now)
+	liveKitClient, err := livekitclient.NewTokenClient(livekitclient.Options{
+		HostURL:   cfg.LiveKitURL,
+		APIKey:    cfg.LiveKitAPIKey,
+		APISecret: cfg.LiveKitAPISecret,
+		Now:       time.Now,
+	})
+	if err != nil {
+		cleanup()
+		return nil, fmt.Errorf("build livekit token client: %w", err)
+	}
 
 	commandService, err := application.NewCommandService(
 		roomStore,
@@ -139,6 +151,8 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 	}
 
 	grpcServer := grpc.NewServer()
+	rtcv1.RegisterRTCQueryServiceServer(grpcServer, grpcQueryServer)
+
 	grpcHealthServer := grpcHealth.NewServer()
 	grpcHealthV1.RegisterHealthServer(grpcServer, grpcHealthServer)
 	grpcHealthServer.SetServingStatus("", grpcHealthV1.HealthCheckResponse_SERVING)
@@ -150,14 +164,90 @@ func NewContainer(cfg config.Config, logger *slog.Logger) (*Container, error) {
 	}
 
 	return &Container{
-		HTTPServer:      httpServer,
-		GRPCServer:      grpcServer,
-		GRPCListener:    grpcListener,
-		CommandConsumer: consumer,
-		OutboxRelay:     outboxRelay,
-		QueryServer:     grpcQueryServer,
-		closers:         closers,
+		httpServer:         httpServer,
+		grpcServer:         grpcServer,
+		grpcListener:       grpcListener,
+		commandConsumer:    consumer,
+		outboxRelay:        outboxRelay,
+		outboxPollInterval: cfg.OutboxPollInterval,
+		closers:            closers,
+		logger:             logger,
 	}, nil
+}
+
+// Run starts all runtime loops and blocks until context cancellation or first fatal runtime error.
+func (c *Container) Run(ctx context.Context) error {
+	if c == nil {
+		return nil
+	}
+
+	errCh := make(chan error, 4)
+
+	go func() {
+		if runErr := c.outboxRelay.Run(ctx, c.outboxPollInterval); runErr != nil {
+			errCh <- fmt.Errorf("run outbox relay: %w", runErr)
+		}
+	}()
+
+	go func() {
+		if runErr := c.commandConsumer.Run(ctx); runErr != nil {
+			errCh <- fmt.Errorf("run command consumer: %w", runErr)
+		}
+	}()
+
+	go func() {
+		if runErr := c.httpServer.ListenAndServe(); runErr != nil && !errors.Is(runErr, http.ErrServerClosed) {
+			errCh <- fmt.Errorf("run http server: %w", runErr)
+		}
+	}()
+
+	go func() {
+		if runErr := c.grpcServer.Serve(c.grpcListener); runErr != nil && !errors.Is(runErr, grpc.ErrServerStopped) {
+			errCh <- fmt.Errorf("run grpc server: %w", runErr)
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return nil
+	case runErr := <-errCh:
+		return runErr
+	}
+}
+
+// Shutdown gracefully stops servers and closes infrastructure resources.
+func (c *Container) Shutdown(ctx context.Context) error {
+	if c == nil {
+		return nil
+	}
+
+	var shutdownErr error
+
+	if err := c.httpServer.Shutdown(ctx); err != nil {
+		shutdownErr = errors.Join(shutdownErr, fmt.Errorf("shutdown http server: %w", err))
+	}
+
+	grpcStopped := make(chan struct{})
+	go func() {
+		c.grpcServer.GracefulStop()
+		close(grpcStopped)
+	}()
+
+	select {
+	case <-grpcStopped:
+	case <-ctx.Done():
+		c.grpcServer.Stop()
+	}
+
+	if err := c.grpcListener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+		shutdownErr = errors.Join(shutdownErr, fmt.Errorf("close grpc listener: %w", err))
+	}
+
+	if err := c.Close(); err != nil {
+		shutdownErr = errors.Join(shutdownErr, fmt.Errorf("close infrastructure resources: %w", err))
+	}
+
+	return shutdownErr
 }
 
 func (c *Container) Close() error {

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/c4erries/mint/internal/rtc/domain"
-	"github.com/c4erries/mint/pkg/id"
+	"github.com/google/uuid"
 )
 
 // CommandServiceOptions configures write-side orchestration behavior.
@@ -45,7 +45,7 @@ func NewCommandService(
 	}
 
 	if options.IDGenerator == nil {
-		options.IDGenerator = id.New
+		options.IDGenerator = uuid.NewString
 	}
 
 	return &CommandService{

@@ -14,6 +14,7 @@ const (
 	defaultRTCEventsTopic         = "mint.rtc.events.v1"
 	defaultRTCCommandsTopic       = "mint.rtc.commands.v1"
 	defaultKafkaConsumerGroup     = "mint.rtc-api.v1"
+	defaultLiveKitURL             = "http://127.0.0.1:7880"
 	defaultOutboxPollInterval     = 2 * time.Second
 	defaultOutboxBatchSize        = 100
 	defaultTokenTTL               = 5 * time.Minute
@@ -37,6 +38,7 @@ type Config struct {
 	RTCEventsTopic         string
 	RTCCommandsTopic       string
 	KafkaConsumerGroup     string
+	LiveKitURL             string
 	LiveKitAPIKey          string
 	LiveKitAPISecret       string
 	OutboxPollInterval     time.Duration
@@ -62,6 +64,7 @@ func Default() Config {
 		RTCEventsTopic:         defaultRTCEventsTopic,
 		RTCCommandsTopic:       defaultRTCCommandsTopic,
 		KafkaConsumerGroup:     defaultKafkaConsumerGroup,
+		LiveKitURL:             defaultLiveKitURL,
 		OutboxPollInterval:     defaultOutboxPollInterval,
 		OutboxBatchSize:        defaultOutboxBatchSize,
 		DefaultTokenTTL:        defaultTokenTTL,
@@ -86,6 +89,7 @@ func LoadFromEnv() (Config, error) {
 	cfg.RTCEventsTopic = stringEnvOrDefault("MINT_RTC_EVENTS_TOPIC", cfg.RTCEventsTopic)
 	cfg.RTCCommandsTopic = stringEnvOrDefault("MINT_RTC_COMMANDS_TOPIC", cfg.RTCCommandsTopic)
 	cfg.KafkaConsumerGroup = stringEnvOrDefault("MINT_RTC_KAFKA_CONSUMER_GROUP", cfg.KafkaConsumerGroup)
+	cfg.LiveKitURL = stringEnvOrDefault("MINT_LIVEKIT_URL", cfg.LiveKitURL)
 
 	cfg.LiveKitAPIKey = os.Getenv("MINT_LIVEKIT_API_KEY")
 	cfg.LiveKitAPISecret = os.Getenv("MINT_LIVEKIT_API_SECRET")
@@ -193,6 +197,10 @@ func LoadFromEnv() (Config, error) {
 
 	if strings.TrimSpace(cfg.KafkaConsumerGroup) == "" {
 		return Config{}, fmt.Errorf("MINT_RTC_KAFKA_CONSUMER_GROUP must not be empty")
+	}
+
+	if strings.TrimSpace(cfg.LiveKitURL) == "" {
+		return Config{}, fmt.Errorf("MINT_LIVEKIT_URL must not be empty")
 	}
 
 	return cfg, nil

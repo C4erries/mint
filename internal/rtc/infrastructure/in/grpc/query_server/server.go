@@ -2,12 +2,20 @@ package queryserver
 
 import (
 	"context"
+	"errors"
 
+	rtcv1 "github.com/c4erries/mint/api/rtc/v1"
 	"github.com/c4erries/mint/internal/rtc/application"
+	"github.com/c4erries/mint/internal/rtc/domain"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// Server is transport-neutral gRPC query adapter.
+// Server is gRPC query transport adapter.
 type Server struct {
+	rtcv1.UnimplementedRTCQueryServiceServer
+
 	queries *application.QueryService
 }
 
@@ -15,78 +23,113 @@ func New(queries *application.QueryService) *Server {
 	return &Server{queries: queries}
 }
 
-type GetVoiceRoomStateRequest struct {
-	WorkspaceID string
-	ChannelID   string
-}
-
-type GetVoiceRoomStateResponse struct {
-	State application.VoiceRoomState
-}
-
-func (s *Server) GetVoiceRoomState(ctx context.Context, request GetVoiceRoomStateRequest) (GetVoiceRoomStateResponse, error) {
+func (s *Server) GetVoiceRoomState(ctx context.Context, request *rtcv1.GetVoiceRoomStateRequest) (*rtcv1.GetVoiceRoomStateResponse, error) {
 	state, err := s.queries.GetVoiceRoomState(ctx, application.GetVoiceRoomStateQuery{
-		WorkspaceID: request.WorkspaceID,
-		ChannelID:   request.ChannelID,
+		WorkspaceID: request.GetWorkspaceId(),
+		ChannelID:   request.GetChannelId(),
 	})
 	if err != nil {
-		return GetVoiceRoomStateResponse{}, err
+		return nil, mapQueryError(err)
 	}
 
-	return GetVoiceRoomStateResponse{State: state}, nil
+	return &rtcv1.GetVoiceRoomStateResponse{State: mapVoiceRoomState(state)}, nil
 }
 
-type ListVoiceParticipantsRequest struct {
-	RoomID string
-}
-
-type ListVoiceParticipantsResponse struct {
-	Participants []application.VoiceParticipant
-}
-
-func (s *Server) ListVoiceParticipants(ctx context.Context, request ListVoiceParticipantsRequest) (ListVoiceParticipantsResponse, error) {
-	participants, err := s.queries.ListVoiceParticipants(ctx, application.ListVoiceParticipantsQuery{RoomID: request.RoomID})
+func (s *Server) ListVoiceParticipants(ctx context.Context, request *rtcv1.ListVoiceParticipantsRequest) (*rtcv1.ListVoiceParticipantsResponse, error) {
+	participants, err := s.queries.ListVoiceParticipants(ctx, application.ListVoiceParticipantsQuery{RoomID: request.GetRoomId()})
 	if err != nil {
-		return ListVoiceParticipantsResponse{}, err
+		return nil, mapQueryError(err)
 	}
 
-	return ListVoiceParticipantsResponse{Participants: participants}, nil
+	response := &rtcv1.ListVoiceParticipantsResponse{Participants: make([]*rtcv1.VoiceParticipant, 0, len(participants))}
+	for _, participant := range participants {
+		response.Participants = append(response.Participants, mapVoiceParticipant(participant))
+	}
+
+	return response, nil
 }
 
-type GetVoiceChannelBindingRequest struct {
-	WorkspaceID string
-	ChannelID   string
-}
-
-type GetVoiceChannelBindingResponse struct {
-	Binding application.VoiceChannelBindingView
-}
-
-func (s *Server) GetVoiceChannelBinding(ctx context.Context, request GetVoiceChannelBindingRequest) (GetVoiceChannelBindingResponse, error) {
+func (s *Server) GetVoiceChannelBinding(ctx context.Context, request *rtcv1.GetVoiceChannelBindingRequest) (*rtcv1.GetVoiceChannelBindingResponse, error) {
 	binding, err := s.queries.GetVoiceChannelBinding(ctx, application.GetVoiceChannelBindingQuery{
-		WorkspaceID: request.WorkspaceID,
-		ChannelID:   request.ChannelID,
+		WorkspaceID: request.GetWorkspaceId(),
+		ChannelID:   request.GetChannelId(),
 	})
 	if err != nil {
-		return GetVoiceChannelBindingResponse{}, err
+		return nil, mapQueryError(err)
 	}
 
-	return GetVoiceChannelBindingResponse{Binding: binding}, nil
+	return &rtcv1.GetVoiceChannelBindingResponse{Binding: mapVoiceChannelBinding(binding)}, nil
 }
 
-type GetRtcTokenGrantStatusRequest struct {
-	TokenID string
-}
-
-type GetRtcTokenGrantStatusResponse struct {
-	Status application.RtcTokenGrantStatus
-}
-
-func (s *Server) GetRtcTokenGrantStatus(ctx context.Context, request GetRtcTokenGrantStatusRequest) (GetRtcTokenGrantStatusResponse, error) {
-	status, err := s.queries.GetRtcTokenGrantStatus(ctx, application.GetRtcTokenGrantStatusQuery{TokenID: request.TokenID})
+func (s *Server) GetRtcTokenGrantStatus(ctx context.Context, request *rtcv1.GetRtcTokenGrantStatusRequest) (*rtcv1.GetRtcTokenGrantStatusResponse, error) {
+	grantStatus, err := s.queries.GetRtcTokenGrantStatus(ctx, application.GetRtcTokenGrantStatusQuery{TokenID: request.GetTokenId()})
 	if err != nil {
-		return GetRtcTokenGrantStatusResponse{}, err
+		return nil, mapQueryError(err)
 	}
 
-	return GetRtcTokenGrantStatusResponse{Status: status}, nil
+	return &rtcv1.GetRtcTokenGrantStatusResponse{Status: mapRtcTokenGrantStatus(grantStatus)}, nil
+}
+
+func mapVoiceRoomState(state application.VoiceRoomState) *rtcv1.VoiceRoomState {
+	return &rtcv1.VoiceRoomState{
+		RoomId:            state.RoomID,
+		WorkspaceId:       state.WorkspaceID,
+		ChannelId:         state.ChannelID,
+		Active:            state.Active,
+		ParticipantCount:  int32(state.ParticipantCount),
+		LastStateChangeAt: timestamppb.New(state.LastStateChangeAt),
+	}
+}
+
+func mapVoiceParticipant(participant application.VoiceParticipant) *rtcv1.VoiceParticipant {
+	mapped := &rtcv1.VoiceParticipant{
+		UserId:          participant.UserID,
+		JoinedAt:        timestamppb.New(participant.JoinedAt),
+		MicrophoneMuted: participant.MicrophoneMuted,
+		CameraEnabled:   participant.CameraEnabled,
+	}
+
+	if participant.LeftAt != nil {
+		mapped.LeftAt = timestamppb.New(*participant.LeftAt)
+	}
+
+	return mapped
+}
+
+func mapVoiceChannelBinding(binding application.VoiceChannelBindingView) *rtcv1.VoiceChannelBinding {
+	return &rtcv1.VoiceChannelBinding{
+		WorkspaceId: binding.WorkspaceID,
+		ChannelId:   binding.ChannelID,
+		RoomId:      binding.RoomID,
+		UpdatedAt:   timestamppb.New(binding.UpdatedAt),
+	}
+}
+
+func mapRtcTokenGrantStatus(statusView application.RtcTokenGrantStatus) *rtcv1.RtcTokenGrantStatus {
+	return &rtcv1.RtcTokenGrantStatus{
+		TokenId:      statusView.TokenID,
+		RoomId:       statusView.RoomID,
+		UserId:       statusView.UserID,
+		IssuedAt:     timestamppb.New(statusView.IssuedAt),
+		ExpiresAt:    timestamppb.New(statusView.ExpiresAt),
+		Expired:      statusView.Expired,
+		CanPublish:   statusView.CanPublish,
+		CanSubscribe: statusView.CanSubscribe,
+		Token:        statusView.Token,
+	}
+}
+
+func mapQueryError(err error) error {
+	switch {
+	case errors.Is(err, application.ErrInvalidQuery):
+		return status.Error(codes.InvalidArgument, err.Error())
+	case errors.Is(err, domain.ErrVoiceRoomNotFound),
+		errors.Is(err, domain.ErrVoiceChannelBindingNotFound),
+		errors.Is(err, domain.ErrGrantNotFound):
+		return status.Error(codes.NotFound, err.Error())
+	case errors.Is(err, domain.ErrGrantExpired):
+		return status.Error(codes.FailedPrecondition, err.Error())
+	default:
+		return status.Error(codes.Internal, err.Error())
+	}
 }

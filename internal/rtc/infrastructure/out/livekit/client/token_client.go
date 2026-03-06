@@ -3,76 +3,83 @@ package livekitclient
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/c4erries/mint/internal/rtc/application"
-	"github.com/c4erries/mint/pkg/id"
+	"github.com/google/uuid"
 	"github.com/livekit/protocol/auth"
+	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
-// AccessTokenBuilder is a test-friendly wrapper around livekit auth token builder.
-type AccessTokenBuilder interface {
-	SetIdentity(identity string) AccessTokenBuilder
-	SetVideoGrant(grant *auth.VideoGrant) AccessTokenBuilder
-	SetValidFor(duration time.Duration) AccessTokenBuilder
-	ToJWT() (string, error)
+// RoomServiceTokenClient defines minimal token creation contract exposed by LiveKit SDK.
+type RoomServiceTokenClient interface {
+	CreateToken() *auth.AccessToken
 }
 
-// AccessTokenFactory wraps livekit token constructor for easier testing.
-type AccessTokenFactory interface {
-	NewAccessToken(apiKey string, apiSecret string) AccessTokenBuilder
+// RoomServiceClientFactory wraps SDK room service constructor for testability.
+type RoomServiceClientFactory interface {
+	NewRoomServiceClient(hostURL string, apiKey string, apiSecret string) RoomServiceTokenClient
 }
 
-type defaultAccessTokenFactory struct{}
+type defaultRoomServiceClientFactory struct{}
 
-func (defaultAccessTokenFactory) NewAccessToken(apiKey string, apiSecret string) AccessTokenBuilder {
-	return &accessTokenAdapter{token: auth.NewAccessToken(apiKey, apiSecret)}
+func (defaultRoomServiceClientFactory) NewRoomServiceClient(hostURL string, apiKey string, apiSecret string) RoomServiceTokenClient {
+	return lksdk.NewRoomServiceClient(hostURL, apiKey, apiSecret)
 }
 
-type accessTokenAdapter struct {
-	token *auth.AccessToken
+// Options configure TokenClient construction.
+type Options struct {
+	HostURL       string
+	APIKey        string
+	APISecret     string
+	Now           func() time.Time
+	IDGenerator   func() string
+	ClientFactory RoomServiceClientFactory
 }
 
-func (a *accessTokenAdapter) SetIdentity(identity string) AccessTokenBuilder {
-	a.token.SetIdentity(identity)
-	return a
-}
-
-func (a *accessTokenAdapter) SetVideoGrant(grant *auth.VideoGrant) AccessTokenBuilder {
-	a.token.SetVideoGrant(grant)
-	return a
-}
-
-func (a *accessTokenAdapter) SetValidFor(duration time.Duration) AccessTokenBuilder {
-	a.token.SetValidFor(duration)
-	return a
-}
-
-func (a *accessTokenAdapter) ToJWT() (string, error) {
-	return a.token.ToJWT()
-}
-
-// TokenClient issues LiveKit JWT tokens via official protocol library.
+// TokenClient issues LiveKit JWT tokens via official LiveKit Go SDK.
 type TokenClient struct {
-	apiKey      string
-	apiSecret   string
 	now         func() time.Time
 	idGenerator func() string
-	factory     AccessTokenFactory
+	roomClient  RoomServiceTokenClient
 }
 
-func NewTokenClient(apiKey string, apiSecret string, now func() time.Time) *TokenClient {
-	if now == nil {
-		now = time.Now
+func NewTokenClient(options Options) (*TokenClient, error) {
+	if strings.TrimSpace(options.HostURL) == "" {
+		return nil, fmt.Errorf("livekit host url is required")
+	}
+
+	if strings.TrimSpace(options.APIKey) == "" {
+		return nil, fmt.Errorf("livekit api key is required")
+	}
+
+	if strings.TrimSpace(options.APISecret) == "" {
+		return nil, fmt.Errorf("livekit api secret is required")
+	}
+
+	if options.Now == nil {
+		options.Now = time.Now
+	}
+
+	if options.IDGenerator == nil {
+		options.IDGenerator = uuid.NewString
+	}
+
+	if options.ClientFactory == nil {
+		options.ClientFactory = defaultRoomServiceClientFactory{}
+	}
+
+	roomClient := options.ClientFactory.NewRoomServiceClient(options.HostURL, options.APIKey, options.APISecret)
+	if roomClient == nil {
+		return nil, fmt.Errorf("livekit room service client is required")
 	}
 
 	return &TokenClient{
-		apiKey:      apiKey,
-		apiSecret:   apiSecret,
-		now:         now,
-		idGenerator: id.New,
-		factory:     defaultAccessTokenFactory{},
-	}
+		now:         options.Now,
+		idGenerator: options.IDGenerator,
+		roomClient:  roomClient,
+	}, nil
 }
 
 func (c *TokenClient) IssueToken(_ context.Context, request application.LiveKitTokenRequest) (application.LiveKitIssuedToken, error) {
@@ -88,7 +95,7 @@ func (c *TokenClient) IssueToken(_ context.Context, request application.LiveKitT
 	grant.SetCanPublish(request.CanPublish)
 	grant.SetCanSubscribe(request.CanSubscribe)
 
-	token, err := c.factory.NewAccessToken(c.apiKey, c.apiSecret).
+	token, err := c.roomClient.CreateToken().
 		SetIdentity(request.UserID).
 		SetVideoGrant(grant).
 		SetValidFor(request.TTL).

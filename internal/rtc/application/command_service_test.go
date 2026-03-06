@@ -7,25 +7,34 @@ import (
 	"time"
 
 	"github.com/c4erries/mint/internal/rtc/application"
+	appmocks "github.com/c4erries/mint/internal/rtc/application/mocks"
 	"github.com/c4erries/mint/internal/rtc/domain"
-	grpcclients "github.com/c4erries/mint/internal/rtc/infrastructure/out/grpc/clients"
-	livekitclient "github.com/c4erries/mint/internal/rtc/infrastructure/out/livekit/client"
-	"github.com/c4erries/mint/internal/rtc/infrastructure/out/repository/inmemory"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
-func TestCommandService_HandleJoinAndIssueToken(t *testing.T) {
+func TestCommandService_JoinVoiceChannel_ProcessedCommandIsNoop(t *testing.T) {
 	t.Parallel()
 
-	now := time.Now().UTC()
 	ctx := context.Background()
+	now := time.Now().UTC()
 
-	store := inmemory.NewRoomStore()
-	grants := inmemory.NewGrantStore(func() time.Time { return now })
-	permissions := grpcclients.NewPermissionClient()
-	livekit := livekitclient.NewTokenClient("test-key", "test-secret", func() time.Time { return now })
+	rooms := appmocks.NewVoiceRoomWriteRepository(t)
+	tx := appmocks.NewVoiceRoomWriteTx(t)
+	grants := appmocks.NewMediaAccessGrantRepository(t)
+	permissions := appmocks.NewPermissionChecker(t)
+	livekit := appmocks.NewLiveKitClient(t)
+
+	permissions.EXPECT().CanJoinVoiceChannel(ctx, "ws-1", "ch-1", "user-1").Return(true, nil).Once()
+	rooms.EXPECT().WithTx(ctx, mock.Anything).
+		RunAndReturn(func(callCtx context.Context, fn func(application.VoiceRoomWriteTx) error) error {
+			return fn(tx)
+		}).
+		Once()
+	tx.EXPECT().IsCommandProcessed(ctx, "cmd-join").Return(true, nil).Once()
 
 	service, err := application.NewCommandService(
-		store,
+		rooms,
 		grants,
 		permissions,
 		livekit,
@@ -34,147 +43,119 @@ func TestCommandService_HandleJoinAndIssueToken(t *testing.T) {
 			Now:             func() time.Time { return now },
 		},
 	)
-	if err != nil {
-		t.Fatalf("create command service failed: %v", err)
-	}
+	require.NoError(t, err)
 
-	queries := application.NewQueryService(store, grants)
-
-	testCases := []struct {
-		name string
-		run  func(t *testing.T)
-	}{
-		{
-			name: "join command is idempotent by command id",
-			run: func(t *testing.T) {
-				joinMeta := application.CommandMeta{
-					CommandID:     "cmd-join-1",
-					CorrelationID: "corr-1",
-					CausationID:   "cause-1",
-					MessageID:     "msg-1",
-					OccurredAt:    now,
-					WorkspaceID:   "ws-1",
-					ChannelID:     "ch-1",
-					ActorID:       "user-1",
-					SchemaVersion: 1,
-				}
-
-				joinCommand := application.JoinVoiceChannelCommand{Meta: joinMeta, UserID: "user-1"}
-				if runErr := service.JoinVoiceChannel(ctx, joinCommand); runErr != nil {
-					t.Fatalf("first join failed: %v", runErr)
-				}
-
-				if runErr := service.JoinVoiceChannel(ctx, joinCommand); runErr != nil {
-					t.Fatalf("second join should be idempotent, got error: %v", runErr)
-				}
-
-				state, runErr := queries.GetVoiceRoomState(ctx, application.GetVoiceRoomStateQuery{WorkspaceID: "ws-1", ChannelID: "ch-1"})
-				if runErr != nil {
-					t.Fatalf("get room state failed: %v", runErr)
-				}
-
-				if state.ParticipantCount != 1 {
-					t.Fatalf("expected exactly one active participant, got %d", state.ParticipantCount)
-				}
-
-				messages, runErr := store.ListUnpublished(ctx, 100)
-				if runErr != nil {
-					t.Fatalf("list unpublished outbox failed: %v", runErr)
-				}
-
-				joinEvents := 0
-				for _, message := range messages {
-					if message.EventType == domain.EventVoiceChannelJoined {
-						joinEvents++
-					}
-				}
-
-				if joinEvents != 1 {
-					t.Fatalf("expected one join event, got %d", joinEvents)
-				}
-			},
+	err = service.JoinVoiceChannel(ctx, application.JoinVoiceChannelCommand{
+		Meta: application.CommandMeta{
+			CommandID:     "cmd-join",
+			CorrelationID: "corr-join",
+			CausationID:   "cause-join",
+			MessageID:     "msg-join",
+			OccurredAt:    now,
+			WorkspaceID:   "ws-1",
+			ChannelID:     "ch-1",
+			ActorID:       "user-1",
+			SchemaVersion: 1,
 		},
-		{
-			name: "issue token stores retrievable grant",
-			run: func(t *testing.T) {
-				issueMeta := application.CommandMeta{
-					CommandID:     "cmd-token-1",
-					CorrelationID: "corr-2",
-					CausationID:   "cause-2",
-					MessageID:     "msg-2",
-					OccurredAt:    now.Add(1 * time.Second),
-					WorkspaceID:   "ws-1",
-					ChannelID:     "ch-1",
-					ActorID:       "user-1",
-					SchemaVersion: 1,
-				}
-
-				if runErr := service.IssueRtcToken(ctx, application.IssueRtcTokenCommand{
-					Meta:         issueMeta,
-					UserID:       "user-1",
-					TTL:          3 * time.Minute,
-					CanPublish:   true,
-					CanSubscribe: true,
-				}); runErr != nil {
-					t.Fatalf("issue token failed: %v", runErr)
-				}
-
-				messages, runErr := store.ListUnpublished(ctx, 100)
-				if runErr != nil {
-					t.Fatalf("list unpublished outbox failed: %v", runErr)
-				}
-
-				var tokenID string
-				for _, message := range messages {
-					if message.EventType != domain.EventRtcTokenIssued {
-						continue
-					}
-
-					tokenID = message.Payload["token_id"]
-				}
-
-				if tokenID == "" {
-					t.Fatalf("expected token event with token_id payload")
-				}
-
-				status, runErr := queries.GetRtcTokenGrantStatus(ctx, application.GetRtcTokenGrantStatusQuery{TokenID: tokenID})
-				if runErr != nil {
-					t.Fatalf("query token status failed: %v", runErr)
-				}
-
-				if status.Expired {
-					t.Fatalf("token must not be expired")
-				}
-
-				if status.TokenID != tokenID {
-					t.Fatalf("expected token id %s, got %s", tokenID, status.TokenID)
-				}
-			},
-		},
-	}
-
-	for _, testCase := range testCases {
-		testCase := testCase
-		t.Run(testCase.name, func(t *testing.T) {
-			testCase.run(t)
-		})
-	}
+		UserID: "user-1",
+	})
+	require.NoError(t, err)
 }
 
-func TestCommandService_PermissionDenied(t *testing.T) {
+func TestCommandService_IssueRtcToken_SavesGrantAndOutbox(t *testing.T) {
 	t.Parallel()
 
-	now := time.Now().UTC()
 	ctx := context.Background()
+	now := time.Now().UTC()
 
-	store := inmemory.NewRoomStore()
-	grants := inmemory.NewGrantStore(func() time.Time { return now })
-	permissions := grpcclients.NewPermissionClient()
-	permissions.Deny("ws-deny", "ch-deny", "user-deny")
-	livekit := livekitclient.NewTokenClient("test-key", "test-secret", func() time.Time { return now })
+	rooms := appmocks.NewVoiceRoomWriteRepository(t)
+	tx := appmocks.NewVoiceRoomWriteTx(t)
+	grants := appmocks.NewMediaAccessGrantRepository(t)
+	permissions := appmocks.NewPermissionChecker(t)
+	livekit := appmocks.NewLiveKitClient(t)
+
+	room, err := domain.NewVoiceRoom("room-1", "ws-1", "ch-1", now)
+	require.NoError(t, err)
+	_, err = room.JoinParticipant("user-1", now)
+	require.NoError(t, err)
+
+	permissions.EXPECT().CanJoinVoiceChannel(ctx, "ws-1", "ch-1", "user-1").Return(true, nil).Once()
+	rooms.EXPECT().WithTx(ctx, mock.Anything).
+		RunAndReturn(func(callCtx context.Context, fn func(application.VoiceRoomWriteTx) error) error {
+			return fn(tx)
+		}).
+		Once()
+
+	tx.EXPECT().IsCommandProcessed(ctx, "cmd-token").Return(false, nil).Once()
+	tx.EXPECT().GetRoom(ctx, "room-1").Return(room.Clone(), nil).Once()
+	tx.EXPECT().SaveRoom(ctx, mock.AnythingOfType("*domain.VoiceRoom")).Return(nil).Once()
+	tx.EXPECT().AppendOutbox(ctx, mock.MatchedBy(func(message application.OutboxMessage) bool {
+		return message.EventType == domain.EventRtcTokenIssued && message.RoomID == "room-1"
+	})).Return(nil).Once()
+	tx.EXPECT().MarkCommandProcessed(ctx, "cmd-token").Return(nil).Once()
+
+	livekit.EXPECT().IssueToken(ctx, mock.MatchedBy(func(request application.LiveKitTokenRequest) bool {
+		return request.RoomID == "room-1" && request.UserID == "user-1" && request.TTL == 2*time.Minute
+	})).Return(application.LiveKitIssuedToken{
+		TokenID:   "token-1",
+		Token:     "jwt",
+		IssuedAt:  now,
+		ExpiresAt: now.Add(2 * time.Minute),
+	}, nil).Once()
+
+	grants.EXPECT().SaveGrant(ctx, mock.Anything).Return(nil).Once()
 
 	service, err := application.NewCommandService(
-		store,
+		rooms,
+		grants,
+		permissions,
+		livekit,
+		application.CommandServiceOptions{
+			DefaultTokenTTL: 5 * time.Minute,
+			Now:             func() time.Time { return now },
+			IDGenerator: func() string {
+				return "evt-1"
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	err = service.IssueRtcToken(ctx, application.IssueRtcTokenCommand{
+		Meta: application.CommandMeta{
+			CommandID:     "cmd-token",
+			CorrelationID: "corr-token",
+			CausationID:   "cause-token",
+			MessageID:     "msg-token",
+			OccurredAt:    now,
+			WorkspaceID:   "ws-1",
+			ChannelID:     "ch-1",
+			RoomID:        "room-1",
+			ActorID:       "user-1",
+			SchemaVersion: 1,
+		},
+		UserID:       "user-1",
+		TTL:          2 * time.Minute,
+		CanPublish:   true,
+		CanSubscribe: true,
+	})
+	require.NoError(t, err)
+}
+
+func TestCommandService_JoinVoiceChannel_PermissionDenied(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	rooms := appmocks.NewVoiceRoomWriteRepository(t)
+	grants := appmocks.NewMediaAccessGrantRepository(t)
+	permissions := appmocks.NewPermissionChecker(t)
+	livekit := appmocks.NewLiveKitClient(t)
+
+	permissions.EXPECT().CanJoinVoiceChannel(ctx, "ws-deny", "ch-deny", "user-deny").Return(false, nil).Once()
+
+	service, err := application.NewCommandService(
+		rooms,
 		grants,
 		permissions,
 		livekit,
@@ -183,9 +164,7 @@ func TestCommandService_PermissionDenied(t *testing.T) {
 			Now:             func() time.Time { return now },
 		},
 	)
-	if err != nil {
-		t.Fatalf("create command service failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	err = service.JoinVoiceChannel(ctx, application.JoinVoiceChannelCommand{
 		Meta: application.CommandMeta{
@@ -201,7 +180,5 @@ func TestCommandService_PermissionDenied(t *testing.T) {
 		},
 		UserID: "user-deny",
 	})
-	if !errors.Is(err, application.ErrPermissionDenied) {
-		t.Fatalf("expected permission denied, got %v", err)
-	}
+	require.True(t, errors.Is(err, application.ErrPermissionDenied))
 }

@@ -11,7 +11,7 @@ import (
 
 	"github.com/c4erries/mint/internal/rtc/application"
 	"github.com/c4erries/mint/internal/rtc/domain"
-	"github.com/c4erries/mint/pkg/id"
+	"github.com/google/uuid"
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/webhook"
 )
@@ -42,7 +42,7 @@ func New(apiKey string, apiSecret string, commands *application.CommandService, 
 		commands:    commands,
 		logger:      logger,
 		now:         time.Now,
-		idGenerator: id.New,
+		idGenerator: uuid.NewString,
 	}
 }
 
