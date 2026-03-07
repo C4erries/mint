@@ -1,77 +1,46 @@
-# Review Backlog
+# Fix Plan Before Test Branch
 
-Открытые и закрытые пункты после ревью `core + rtc`.
+## Goal
 
-## Part A - Critical (P1)
+Закрыть блокеры по RTC/core перед первичной выгрузкой в `test` ветку: чтобы voice-flow был реально проверен blackbox smoke, а dev-контур поднимался без ложноположительных успехов.
 
-1. Workspace consumer: poison-команда может стопорить partition
-- Где: `internal/workspace/infrastructure/in/kafka/command_consumer/consumer.go`
+## Plan
+
+1. Blockers first (`LiveKit + full smoke`)
+- Исправить ключи LiveKit в compose-контурах (`core.yml`, `rtc.yml`) на валидный формат `key: secret`, чтобы контейнер не завершался сразу после старта.
+- Довести smoke до полного voice-контракта: после `join` добавить проверку `issue token -> token grant status` (с polling), а затем `leave`.
+- Добавить явный fail-fast на недоступный/упавший LiveKit в smoke-сценарии, чтобы не получать "зеленый" прогон при сломанном media контуре.
+
+2. Stabilize test runtime (`portable e2e`)
+- Сделать запуск `rtc-smoke` воспроизводимым в целевом окружении (минимум Linux CI), без shell-специфичных ловушек.
+- В smoke-скриптах явно проверять все обязательные утилиты (`docker`, `curl`, `python`, `timeout` или безопасный fallback), чтобы падение было ранним и понятным.
+- Сохранить текущую практику предсоздания Kafka topics до начала сценария, как обязательный шаг.
+- Статус: `done`
 - Что сделано:
-  - Вынесен reusable раннер `poll -> dispatch -> retry -> DLQ -> ack` в `pkg/consumer/runner.go`.
-  - Подключён в RTC и Workspace consumer.
-  - Для workspace добавлены `ConsumerOptions`, `DeadLetterMessage`, `CommandDLQPublisher`, новые config/env поля и wiring в core DI.
+  - В `scripts/e2e/lib/common.sh` добавлены runtime-helpers для portability: `require_python`, `ensure_timeout_support`, `run_with_timeout`.
+  - В `scripts/e2e/rtc-smoke.sh` добавлены ранние проверки зависимостей (`docker`, `curl`, `python`) и проверка поддержки таймаутов (с fallback через Python, если `timeout` отсутствует).
+  - В `scripts/e2e/scenarios/core_rtc_smoke.sh` блокирующие `rpk topic consume` переведены на `run_with_timeout`, чтобы сценарий не зависал и воспроизводимо работал в Linux CI.
+  - Предсоздание Kafka topics оставлено обязательным шагом перед запуском сценариев.
+
+3. Finish release hygiene
+- Убрать устаревшее поле `version` из docker-compose файлов.
+- Синхронизировать API-контракт (OpenAPI + frontend ожидания) по token-grant flow: однозначный `token_id` и явное поле токена в статусе.
+- Обновить краткий runbook запуска smoke (одна команда + где смотреть логи при падении).
 - Статус: `done`
-
-## Part B - High Priority (P2)
-
-1. Семантика terminate-события в RTC
-- Где: `internal/rtc/application/command_service_state.go`
 - Что сделано:
-  - Добавлен новый event type `EventVoiceSessionTerminated`.
-  - `TerminateVoiceSession` переключен на публикацию `VoiceSessionTerminated` (без backward compatibility).
-  - Добавлен unit-тест на outbox event type.
-- Статус: `done`
+  - Удалено поле `version` из `deploy/docker-compose/core.yml` и `deploy/docker-compose/rtc.yml`.
+  - Контракт token-grant синхронизирован:
+    - `POST /api/v1/workspaces/{workspace_id}/channels/{channel_id}/voice/token` теперь возвращает `token_id` (детерминированно равен `command_id`);
+    - `GET /api/v1/rtc/token-grants/{token_id}` возвращает явное поле `status.token` вместе с `status.token_id`.
+  - Обновлены `api/rtc/v1/query.proto` + сгенерированные pb/grpc файлы, `api/openapi/core-api.yaml` и smoke-сценарий под новый flow.
+  - Короткий runbook:
+    - запуск: `make rtc-smoke`
+    - оставить стек для диагностики: `RTC_SMOKE_AUTO_DOWN=0 make rtc-smoke`
+    - логи при падении: `docker compose -f deploy/docker-compose/core.yml logs --no-color --tail=300 core rtc-api redpanda livekit`
 
-## Part C - Medium Priority (P3)
+## Done Criteria
 
-1. Mock generation не только для RTC
-- Где: `mockery.yml`
-- Что сделано: добавлены key interfaces для `identity` и `workspace`.
-- Статус: `done`
-
-2. Недостаток edge/infrastructure тестов
-- Что сделано:
-  - `internal/core/infrastructure/out/kafka/producer/producer_test.go`
-  - `internal/core/infrastructure/out/grpc/clients/rtcquery/client_test.go`
-  - `pkg/consumer/runner_test.go`
-  - `internal/workspace/infrastructure/in/kafka/command_consumer/consumer_test.go`
-  - `internal/workspace/infrastructure/in/kafka/command_consumer/kafka_reader_test.go`
-  - `internal/workspace/infrastructure/out/kafka/event_publisher/command_dlq_publisher_test.go`
-  - `internal/workspace/infrastructure/out/kafka/event_publisher/publisher_test.go`
-  - `internal/workspace/infrastructure/out/kafka/event_publisher/outbox_relay_test.go`
-  - `internal/core/infrastructure/in/http/handlers/workspace/handler_test.go`
-- Статус: `done`
-
-3. RTC smoke в Go-коде (реальные подключения) убрать из стандартного тестового контура
-- Что сделано:
-  - `scripts/e2e/rtc-smoke.sh` реализован как orchestration blackbox smoke (`docker compose up/down`, trap/cleanup, запуск сценария).
-  - Добавлен сценарий `scripts/e2e/scenarios/core_rtc_smoke.sh`:
-    - readiness/liveness: `GET /healthz`, `GET /readyz`;
-    - auth happy-path: register -> login -> `GET /api/v1/auth/me`;
-    - workspace happy-path с eventual consistency polling:
-      - `POST /api/v1/workspaces` + poll `GET /api/v1/workspaces/{id}`;
-      - `POST /api/v1/workspaces/{id}/channels` (voice) + poll `GET /api/v1/workspaces/{id}/channels/{channel_id}`;
-    - rtc happy-path: join -> poll state -> binding -> leave -> финальная проверка state;
-    - poison/DLQ/recovery: невалидная команда в `mint.rtc.commands.v1` через `rpk` (redpanda), проверка попадания в `mint.rtc.commands.dlq.v1`, затем валидная REST-команда и подтверждение восстановления обработки.
-  - Локальный запуск: `make rtc-smoke` (опционально `RTC_SMOKE_AUTO_DOWN=0 make rtc-smoke` для сохранения поднятого стека).
-- Статус: `done`
-
-4. Перегруженный core DI composition root
-- Где: `internal/core/infrastructure/di/container.go`
-- Что сделано: сборка разбита на небольшие builder-функции (`buildIdentityService`, `buildWorkspaceComponents`, `buildWorkspaceRuntime`, `buildRTCQueryClient`, `buildHTTPServer`, `buildGRPCServer`) с централизованным cleanup.
-- Статус: `done`
-
-5. Сложность `IssueRtcToken`
-- Где: `internal/rtc/application/command_service_token.go`
-- Что сделано: метод разделён на приватные шаги (`resolveTokenTTL`, `ensureParticipantActive`, `loadOrIssueGrant`, `issueAndSaveGrant`, `persistIssuedToken`) без изменения внешнего контракта.
-- Статус: `done`
-
-6. Хрупкий HTTP member action contract
-- Где: `internal/core/infrastructure/in/http/handlers/workspace/handler.go`
-- Что сделано: путь упрощён до явного endpoint `POST /workspaces/:workspace_id/members/:user_id/join`, убран формат `user_id:join`.
-- Статус: `done`
-
-7. Dev-контур core можно упростить
-- Где: `deploy/docker-compose/core.yml`
-- Что сделано: параметризованы host ports через env (`${...:-default}`), добавлены `go` cache volumes для dev цикла.
-- Статус: `done`
+- LiveKit поднимается стабильно, без ошибки про parse keys.
+- Smoke покрывает полный сценарий `auth -> workspace -> voice join -> token flow -> leave` и отдельный `poison -> DLQ -> recovery`.
+- Smoke запускается в целевом CI и дает воспроизводимый результат.
+- Compose и контрактная документация приведены в консистентное состояние.

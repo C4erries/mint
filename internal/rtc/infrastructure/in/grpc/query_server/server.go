@@ -125,6 +125,7 @@ func mapVoiceChannelBinding(binding application.VoiceChannelBindingView) *rtcv1.
 func mapRtcTokenGrantStatus(statusView application.RtcTokenGrantStatus) *rtcv1.RtcTokenGrantStatus {
 	return &rtcv1.RtcTokenGrantStatus{
 		TokenId:      statusView.TokenID,
+		Token:        statusView.Token,
 		RoomId:       statusView.RoomID,
 		UserId:       statusView.UserID,
 		IssuedAt:     timestamppb.New(statusView.IssuedAt),

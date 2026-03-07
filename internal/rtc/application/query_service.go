@@ -72,6 +72,7 @@ func (s *QueryService) GetRtcTokenGrantStatus(ctx context.Context, query GetRtcT
 
 	return RtcTokenGrantStatus{
 		TokenID:      grant.TokenID,
+		Token:        grant.Token,
 		RoomID:       grant.RoomID,
 		UserID:       grant.UserID,
 		IssuedAt:     grant.IssuedAt,

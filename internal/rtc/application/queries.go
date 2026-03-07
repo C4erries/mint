@@ -32,6 +32,7 @@ type VoiceChannelBindingView struct {
 // RtcTokenGrantStatus represents read model for issued media token.
 type RtcTokenGrantStatus struct {
 	TokenID      string    `json:"token_id"`
+	Token        string    `json:"token"`
 	RoomID       string    `json:"room_id"`
 	UserID       string    `json:"user_id"`
 	IssuedAt     time.Time `json:"issued_at"`

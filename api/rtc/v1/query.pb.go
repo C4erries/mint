@@ -628,6 +628,7 @@ type RtcTokenGrantStatus struct {
 	Expired       bool                   `protobuf:"varint,6,opt,name=expired,proto3" json:"expired,omitempty"`
 	CanPublish    bool                   `protobuf:"varint,7,opt,name=can_publish,json=canPublish,proto3" json:"can_publish,omitempty"`
 	CanSubscribe  bool                   `protobuf:"varint,8,opt,name=can_subscribe,json=canSubscribe,proto3" json:"can_subscribe,omitempty"`
+	Token         string                 `protobuf:"bytes,9,opt,name=token,proto3" json:"token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -718,6 +719,13 @@ func (x *RtcTokenGrantStatus) GetCanSubscribe() bool {
 	return false
 }
 
+func (x *RtcTokenGrantStatus) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
 var File_api_rtc_v1_query_proto protoreflect.FileDescriptor
 
 const file_api_rtc_v1_query_proto_rawDesc = "" +
@@ -763,7 +771,7 @@ const file_api_rtc_v1_query_proto_rawDesc = "" +
 	"\x1dGetRtcTokenGrantStatusRequest\x12\x19\n" +
 	"\btoken_id\x18\x01 \x01(\tR\atokenId\"Z\n" +
 	"\x1eGetRtcTokenGrantStatusResponse\x128\n" +
-	"\x06status\x18\x01 \x01(\v2 .mint.rtc.v1.RtcTokenGrantStatusR\x06status\"\xb6\x02\n" +
+	"\x06status\x18\x01 \x01(\v2 .mint.rtc.v1.RtcTokenGrantStatusR\x06status\"\xcc\x02\n" +
 	"\x13RtcTokenGrantStatus\x12\x19\n" +
 	"\btoken_id\x18\x01 \x01(\tR\atokenId\x12\x17\n" +
 	"\aroom_id\x18\x02 \x01(\tR\x06roomId\x12\x17\n" +
@@ -774,7 +782,8 @@ const file_api_rtc_v1_query_proto_rawDesc = "" +
 	"\aexpired\x18\x06 \x01(\bR\aexpired\x12\x1f\n" +
 	"\vcan_publish\x18\a \x01(\bR\n" +
 	"canPublish\x12#\n" +
-	"\rcan_subscribe\x18\b \x01(\bR\fcanSubscribe2\xcb\x03\n" +
+	"\rcan_subscribe\x18\b \x01(\bR\fcanSubscribe\x12\x14\n" +
+	"\x05token\x18\t \x01(\tR\x05token2\xcb\x03\n" +
 	"\x0fRTCQueryService\x12b\n" +
 	"\x11GetVoiceRoomState\x12%.mint.rtc.v1.GetVoiceRoomStateRequest\x1a&.mint.rtc.v1.GetVoiceRoomStateResponse\x12n\n" +
 	"\x15ListVoiceParticipants\x12).mint.rtc.v1.ListVoiceParticipantsRequest\x1a*.mint.rtc.v1.ListVoiceParticipantsResponse\x12q\n" +

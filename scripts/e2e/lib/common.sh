@@ -21,18 +21,63 @@ require_tools() {
   done
 }
 
+has_cmd() {
+  command -v "$1" >/dev/null 2>&1
+}
+
 python_exec() {
-  if command -v python3 >/dev/null 2>&1; then
+  if has_cmd python3; then
     python3 "$@"
     return
   fi
 
-  if command -v python >/dev/null 2>&1; then
+  if has_cmd python; then
     python "$@"
     return
   fi
 
   fail "required command is missing: python3 (or python)"
+}
+
+require_python() {
+  python_exec -c "import sys" >/dev/null
+}
+
+ensure_timeout_support() {
+  if has_cmd timeout; then
+    return
+  fi
+
+  require_python
+  log "'timeout' command is missing, using python timeout fallback"
+}
+
+run_with_timeout() {
+  local timeout_seconds="$1"
+  shift
+
+  if has_cmd timeout; then
+    timeout "${timeout_seconds}s" "$@"
+    return $?
+  fi
+
+  python_exec - "$timeout_seconds" "$@" <<'PY'
+import subprocess
+import sys
+
+if len(sys.argv) < 3:
+    sys.exit(2)
+
+timeout_seconds = float(sys.argv[1])
+command = sys.argv[2:]
+
+try:
+    result = subprocess.run(command, timeout=timeout_seconds, check=False)
+except subprocess.TimeoutExpired:
+    sys.exit(124)
+
+sys.exit(result.returncode)
+PY
 }
 
 compose() {
@@ -41,7 +86,7 @@ compose() {
 
 new_id() {
   local prefix="${1:-id}"
-  printf '%s-%(%s)T-%d' "$prefix" -1 "$RANDOM"
+  printf '%s-%s-%d' "$prefix" "$(date +%s)" "$RANDOM"
 }
 
 http_request() {

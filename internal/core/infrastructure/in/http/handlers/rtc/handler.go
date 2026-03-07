@@ -143,7 +143,12 @@ func (h *Handler) issueToken(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusAccepted, gin.H{"command_id": meta.CommandID, "correlation_id": meta.CorrelationID})
+	c.JSON(http.StatusAccepted, gin.H{
+		"command_id":     meta.CommandID,
+		"correlation_id": meta.CorrelationID,
+		// Token grant is deterministically indexed by command_id.
+		"token_id": meta.CommandID,
+	})
 }
 
 func (h *Handler) publishSimpleUserCommand(c *gin.Context, commandType string) {

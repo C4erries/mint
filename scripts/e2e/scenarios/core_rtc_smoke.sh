@@ -7,6 +7,7 @@ source "$SCRIPT_DIR/../lib/common.sh"
 SMOKE_BASE_URL="${SMOKE_BASE_URL:?SMOKE_BASE_URL is required}"
 RTC_COMMANDS_TOPIC="${RTC_COMMANDS_TOPIC:-mint.rtc.commands.v1}"
 RTC_COMMANDS_DLQ_TOPIC="${RTC_COMMANDS_DLQ_TOPIC:-mint.rtc.commands.dlq.v1}"
+LIVEKIT_BASE_URL="${LIVEKIT_BASE_URL:-http://127.0.0.1:${MINT_DEV_LIVEKIT_HTTP_PORT:-7880}}"
 SMOKE_TIMEOUT_SECONDS="${SMOKE_TIMEOUT_SECONDS:-420}"
 SMOKE_POLL_SECONDS="${SMOKE_POLL_SECONDS:-3}"
 
@@ -25,6 +26,14 @@ core_ready() {
 log "waiting for /healthz and /readyz"
 poll_until "core healthz" "$SMOKE_TIMEOUT_SECONDS" "$SMOKE_POLL_SECONDS" health_ready || fail "core /healthz is not ready"
 poll_until "core readyz" "$SMOKE_TIMEOUT_SECONDS" "$SMOKE_POLL_SECONDS" core_ready || fail "core /readyz is not ready"
+
+livekit_reachable() {
+  http_request "GET" "$LIVEKIT_BASE_URL"
+  [[ "$HTTP_STATUS" != "000" && -n "$HTTP_STATUS" ]]
+}
+
+log "fail-fast: checking LiveKit reachability"
+poll_until "livekit reachable" 60 2 livekit_reachable || fail "livekit is not reachable at $LIVEKIT_BASE_URL"
 
 EMAIL="rtc-smoke-$(new_id email)@example.test"
 PASSWORD="SmokePass-$(new_id pass)"
@@ -104,6 +113,24 @@ voice_binding_visible() {
 }
 poll_until "voice binding" "$SMOKE_TIMEOUT_SECONDS" "$SMOKE_POLL_SECONDS" voice_binding_visible || fail "voice binding is not available"
 
+ISSUE_TOKEN_PAYLOAD='{"ttl_seconds":300,"can_publish":true,"can_subscribe":true}'
+http_request "POST" "$SMOKE_BASE_URL/api/v1/workspaces/$WORKSPACE_ID/channels/$CHANNEL_ID/voice/token" "$ISSUE_TOKEN_PAYLOAD" "$ACCESS_TOKEN"
+assert_status "202" "issue rtc token command"
+TOKEN_COMMAND_ID="$(json_value '.command_id')"
+TOKEN_ID="$(json_value '.token_id')"
+[[ "$TOKEN_ID" == "$TOKEN_COMMAND_ID" ]] || fail "token_id must match command_id for deterministic grant lookup"
+
+token_grant_ready() {
+  local grant_token_id
+  local grant_token
+  http_request "GET" "$SMOKE_BASE_URL/api/v1/rtc/token-grants/$TOKEN_ID" "" "$ACCESS_TOKEN"
+  [[ "$HTTP_STATUS" == "200" ]] || return 1
+  grant_token_id="$(json_value "status.token_id" 2>/dev/null || true)"
+  grant_token="$(json_value "status.token" 2>/dev/null || true)"
+  [[ "$grant_token_id" == "$TOKEN_ID" && -n "$grant_token" && "$grant_token" != "null" ]]
+}
+poll_until "rtc token grant status" "$SMOKE_TIMEOUT_SECONDS" "$SMOKE_POLL_SECONDS" token_grant_ready || fail "rtc token grant status is not ready"
+
 http_request "POST" "$SMOKE_BASE_URL/api/v1/workspaces/$WORKSPACE_ID/channels/$CHANNEL_ID/voice/leave" "" "$ACCESS_TOKEN"
 assert_status "202" "leave voice command"
 
@@ -139,7 +166,7 @@ printf '%s\n' "$POISON_PAYLOAD" | compose exec -T redpanda rpk topic produce "$R
 
 dlq_has_poison() {
   local dlq_dump
-  dlq_dump="$(timeout 5s docker compose -f "$SMOKE_COMPOSE_FILE" exec -T redpanda rpk topic consume "$RTC_COMMANDS_DLQ_TOPIC" -n 20 --offset start -f '%v\n' 2>/dev/null || true)"
+  dlq_dump="$(run_with_timeout 5 docker compose -f "$SMOKE_COMPOSE_FILE" exec -T redpanda rpk topic consume "$RTC_COMMANDS_DLQ_TOPIC" -n 20 --offset start -f '%v\n' 2>/dev/null || true)"
   [[ -n "$dlq_dump" ]] || return 1
   grep -F "\"command_id\":\"$POISON_COMMAND_ID\"" >/dev/null <<<"$dlq_dump"
 }

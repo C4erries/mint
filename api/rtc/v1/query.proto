@@ -80,4 +80,5 @@ message RtcTokenGrantStatus {
   bool expired = 6;
   bool can_publish = 7;
   bool can_subscribe = 8;
+  string token = 9;
 }

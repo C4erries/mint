@@ -112,7 +112,7 @@ func (s *CommandService) issueAndSaveGrant(
 	}
 
 	grant, err := domain.NewMediaAccessGrant(
-		issuedToken.TokenID,
+		command.Meta.CommandID,
 		command.Meta.CommandID,
 		room.ID,
 		command.UserID,

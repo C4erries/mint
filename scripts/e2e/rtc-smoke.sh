@@ -44,6 +44,8 @@ trap on_error ERR
 trap cleanup EXIT
 
 require_tools docker curl
+require_python
+ensure_timeout_support
 
 SMOKE_TOPICS=(
   "$WORKSPACE_COMMANDS_TOPIC"

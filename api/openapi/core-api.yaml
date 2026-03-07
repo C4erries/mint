@@ -299,7 +299,11 @@ paths:
         - $ref: "#/components/parameters/XCorrelationID"
       responses:
         "202":
-          $ref: "#/components/responses/CommandAccepted"
+          description: Asynchronous command accepted (token id is deterministic)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueRtcTokenAccepted"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -859,6 +863,16 @@ components:
         can_subscribe:
           type: boolean
 
+    IssueRtcTokenAccepted:
+      allOf:
+        - $ref: "#/components/schemas/CommandAccepted"
+        - type: object
+          required: [token_id]
+          properties:
+            token_id:
+              type: string
+              description: Deterministic token grant id. Equals `command_id`.
+
     GetVoiceRoomStateResponse:
       type: object
       properties:
@@ -937,6 +951,9 @@ components:
       type: object
       properties:
         token_id:
+          type: string
+          description: Stable token grant identifier used in `/api/v1/rtc/token-grants/{token_id}`.
+        token:
           type: string
         room_id:
           type: string
