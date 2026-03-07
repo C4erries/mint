@@ -43,9 +43,18 @@
 - Статус: `done`
 
 3. RTC smoke в Go-коде (реальные подключения) убрать из стандартного тестового контура
-- Что сделано: удалён `internal/rtc/smoke/rtc_smoke_test.go`, `make rtc-smoke` переведён на внешний скрипт `scripts/e2e/rtc-smoke.sh`.
-- Что осталось: реализовать полноценный внешний blackbox/e2e smoke (docker + kafka + grpc сценарий).
-- Статус: `open (tech debt)`
+- Что сделано:
+  - `scripts/e2e/rtc-smoke.sh` реализован как orchestration blackbox smoke (`docker compose up/down`, trap/cleanup, запуск сценария).
+  - Добавлен сценарий `scripts/e2e/scenarios/core_rtc_smoke.sh`:
+    - readiness/liveness: `GET /healthz`, `GET /readyz`;
+    - auth happy-path: register -> login -> `GET /api/v1/auth/me`;
+    - workspace happy-path с eventual consistency polling:
+      - `POST /api/v1/workspaces` + poll `GET /api/v1/workspaces/{id}`;
+      - `POST /api/v1/workspaces/{id}/channels` (voice) + poll `GET /api/v1/workspaces/{id}/channels/{channel_id}`;
+    - rtc happy-path: join -> poll state -> binding -> leave -> финальная проверка state;
+    - poison/DLQ/recovery: невалидная команда в `mint.rtc.commands.v1` через `rpk` (redpanda), проверка попадания в `mint.rtc.commands.dlq.v1`, затем валидная REST-команда и подтверждение восстановления обработки.
+  - Локальный запуск: `make rtc-smoke` (опционально `RTC_SMOKE_AUTO_DOWN=0 make rtc-smoke` для сохранения поднятого стека).
+- Статус: `done`
 
 4. Перегруженный core DI composition root
 - Где: `internal/core/infrastructure/di/container.go`

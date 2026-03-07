@@ -12,7 +12,7 @@ PROTOC ?= protoc
 PROTO_GO_OPTS ?= paths=source_relative
 PROTO_FILES := api/rtc/v1/query.proto api/permission/v1/permission.proto
 DOCKER_COMPOSE ?= docker compose
-RTC_COMPOSE_FILE ?= deploy/docker-compose/rtc.yml
+RTC_COMPOSE_FILE ?= deploy/docker-compose/core.yml
 
 .PHONY: help test test-race lint lint-fix proto proto-check check rtc-up rtc-down rtc-smoke
 
@@ -54,6 +54,6 @@ rtc-down:
 	$(DOCKER_COMPOSE) -f $(RTC_COMPOSE_FILE) down
 
 rtc-smoke:
-	bash ./scripts/e2e/rtc-smoke.sh
+	RTC_SMOKE_COMPOSE_FILE=$(RTC_COMPOSE_FILE) bash ./scripts/e2e/rtc-smoke.sh
 
 check: test lint
