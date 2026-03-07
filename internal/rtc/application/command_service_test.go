@@ -63,6 +63,66 @@ func TestCommandService_JoinVoiceChannel_ProcessedCommandIsNoop(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestCommandService_TerminateVoiceSession_PublishesDedicatedTerminateEvent(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	rooms := appmocks.NewVoiceRoomWriteRepository(t)
+	tx := appmocks.NewVoiceRoomWriteTx(t)
+	grants := appmocks.NewMediaAccessGrantRepository(t)
+	permissions := appmocks.NewPermissionChecker(t)
+	livekit := appmocks.NewLiveKitClient(t)
+
+	room, err := domain.NewVoiceRoom("room-1", "ws-1", "ch-1", now)
+	require.NoError(t, err)
+
+	rooms.EXPECT().WithTx(ctx, mock.Anything).
+		RunAndReturn(func(_ context.Context, fn func(application.VoiceRoomWriteTx) error) error {
+			return fn(tx)
+		}).
+		Once()
+
+	tx.EXPECT().IsCommandProcessed(ctx, "cmd-terminate").Return(false, nil).Once()
+	tx.EXPECT().GetRoom(ctx, "room-1").Return(room.Clone(), nil).Once()
+	tx.EXPECT().SaveRoom(ctx, mock.AnythingOfType("*domain.VoiceRoom")).Return(nil).Once()
+	tx.EXPECT().AppendOutbox(ctx, mock.MatchedBy(func(message application.OutboxMessage) bool {
+		return message.EventType == domain.EventVoiceSessionTerminated &&
+			message.RoomID == "room-1" &&
+			message.EventID == "cmd-terminate:"+domain.EventVoiceSessionTerminated
+	})).Return(nil).Once()
+	tx.EXPECT().MarkCommandProcessed(ctx, "cmd-terminate").Return(nil).Once()
+
+	service, err := application.NewCommandService(
+		rooms,
+		grants,
+		permissions,
+		livekit,
+		application.CommandServiceOptions{
+			DefaultTokenTTL: 5 * time.Minute,
+			Now:             func() time.Time { return now },
+		},
+	)
+	require.NoError(t, err)
+
+	err = service.TerminateVoiceSession(ctx, application.TerminateVoiceSessionCommand{
+		Meta: application.CommandMeta{
+			CommandID:     "cmd-terminate",
+			CorrelationID: "corr-terminate",
+			CausationID:   "cause-terminate",
+			MessageID:     "msg-terminate",
+			OccurredAt:    now,
+			WorkspaceID:   "ws-1",
+			ChannelID:     "ch-1",
+			RoomID:        "room-1",
+			ActorID:       "moderator-1",
+			SchemaVersion: 1,
+		},
+	})
+	require.NoError(t, err)
+}
+
 func TestCommandService_IssueRtcToken_SavesGrantAndOutbox(t *testing.T) {
 	t.Parallel()
 

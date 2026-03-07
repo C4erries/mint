@@ -16,10 +16,11 @@
 
 1. Семантика terminate-события в RTC
 - Где: `internal/rtc/application/command_service_state.go`
-- Проблема: `TerminateVoiceSession` публикует `EventVoiceChannelLeft` с reason=`session_terminated`.
-- Риск: неоднозначность event stream для downstream и аналитики.
-- Что сделать: решить, оставляем overload или вводим отдельный event (`VoiceSessionTerminated`).
-- Статус: `open`
+- Что сделано:
+  - Добавлен новый event type `EventVoiceSessionTerminated`.
+  - `TerminateVoiceSession` переключен на публикацию `VoiceSessionTerminated` (без backward compatibility).
+  - Добавлен unit-тест на outbox event type.
+- Статус: `done`
 
 ## Part C - Medium Priority (P3)
 

@@ -51,7 +51,7 @@ func (s *CommandService) TerminateVoiceSession(ctx context.Context, command Term
 			return fmt.Errorf("save room: %w", err)
 		}
 
-		message := s.newOutboxMessage(command.Meta, domain.EventVoiceChannelLeft, room.ID, map[string]string{"reason": "session_terminated"})
+		message := s.newOutboxMessage(command.Meta, domain.EventVoiceSessionTerminated, room.ID, map[string]string{"reason": "session_terminated"})
 		if err = tx.AppendOutbox(ctx, message); err != nil {
 			return fmt.Errorf("append outbox terminate: %w", err)
 		}
