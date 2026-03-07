@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package mint.permission.v1;
+
+option go_package = "github.com/c4erries/mint/api/permission/v1;permissionv1";
+
+service PermissionService {
+  rpc CanJoinVoiceChannel(CanJoinVoiceChannelRequest) returns (CanJoinVoiceChannelResponse);
+}
+
+message CanJoinVoiceChannelRequest {
+  string workspace_id = 1;
+  string channel_id = 2;
+  string user_id = 3;
+}
+
+message CanJoinVoiceChannelResponse {
+  bool allowed = 1;
+}

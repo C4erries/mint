@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package mint.rtc.v1;
+
+option go_package = "github.com/c4erries/mint/api/rtc/v1;rtcv1";
+
+import "google/protobuf/timestamp.proto";
+
+service RTCQueryService {
+  rpc GetVoiceRoomState(GetVoiceRoomStateRequest) returns (GetVoiceRoomStateResponse);
+  rpc ListVoiceParticipants(ListVoiceParticipantsRequest) returns (ListVoiceParticipantsResponse);
+  rpc GetVoiceChannelBinding(GetVoiceChannelBindingRequest) returns (GetVoiceChannelBindingResponse);
+  rpc GetRtcTokenGrantStatus(GetRtcTokenGrantStatusRequest) returns (GetRtcTokenGrantStatusResponse);
+}
+
+message GetVoiceRoomStateRequest {
+  string workspace_id = 1;
+  string channel_id = 2;
+}
+
+message GetVoiceRoomStateResponse {
+  VoiceRoomState state = 1;
+}
+
+message VoiceRoomState {
+  string room_id = 1;
+  string workspace_id = 2;
+  string channel_id = 3;
+  bool active = 4;
+  int32 participant_count = 5;
+  google.protobuf.Timestamp last_state_change_at = 6;
+}
+
+message ListVoiceParticipantsRequest {
+  string room_id = 1;
+}
+
+message ListVoiceParticipantsResponse {
+  repeated VoiceParticipant participants = 1;
+}
+
+message VoiceParticipant {
+  string user_id = 1;
+  google.protobuf.Timestamp joined_at = 2;
+  google.protobuf.Timestamp left_at = 3;
+  bool microphone_muted = 4;
+  bool camera_enabled = 5;
+}
+
+message GetVoiceChannelBindingRequest {
+  string workspace_id = 1;
+  string channel_id = 2;
+}
+
+message GetVoiceChannelBindingResponse {
+  VoiceChannelBinding binding = 1;
+}
+
+message VoiceChannelBinding {
+  string workspace_id = 1;
+  string channel_id = 2;
+  string room_id = 3;
+  google.protobuf.Timestamp updated_at = 4;
+}
+
+message GetRtcTokenGrantStatusRequest {
+  string token_id = 1;
+}
+
+message GetRtcTokenGrantStatusResponse {
+  RtcTokenGrantStatus status = 1;
+}
+
+message RtcTokenGrantStatus {
+  string token_id = 1;
+  string room_id = 2;
+  string user_id = 3;
+  google.protobuf.Timestamp issued_at = 4;
+  google.protobuf.Timestamp expires_at = 5;
+  bool expired = 6;
+  bool can_publish = 7;
+  bool can_subscribe = 8;
+  string token = 9;
+}

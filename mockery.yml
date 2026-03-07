@@ -1,0 +1,33 @@
+dir: '{{.InterfaceDir}}/mocks'
+filename: '{{ snakecase .InterfaceName }}.go'
+structname: '{{.InterfaceName}}'
+pkgname: mocks
+template: testify
+template-data:
+  unroll-variadic: true
+packages:
+  github.com/c4erries/mint/internal/identity/application:
+    interfaces:
+      AccountRepository: {}
+      SessionRepository: {}
+      RevocationStore: {}
+      PasswordHasher: {}
+      TokenManager: {}
+  github.com/c4erries/mint/internal/rtc/application:
+    interfaces:
+      VoiceRoomWriteRepository: {}
+      VoiceRoomWriteTx: {}
+      VoiceRoomReadRepository: {}
+      OutboxStore: {}
+      EventPublisher: {}
+      PermissionChecker: {}
+      LiveKitClient: {}
+      MediaAccessGrantRepository: {}
+  github.com/c4erries/mint/internal/workspace/application:
+    interfaces:
+      WriteRepository: {}
+      WriteTx: {}
+      ReadRepository: {}
+      OutboxStore: {}
+      EventPublisher: {}
+      PermissionEvaluator: {}
