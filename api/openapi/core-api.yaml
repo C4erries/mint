@@ -1,0 +1,956 @@
+openapi: 3.0.3
+info:
+  title: Mint Core API
+  version: 1.0.0
+  description: |
+    Public REST contract exposed by the `core` service for desktop/web frontend clients.
+    Write operations are asynchronous (202 Accepted + command_id/correlation_id).
+servers:
+  - url: http://localhost:8091
+    description: Local dev
+tags:
+  - name: Health
+  - name: Auth
+  - name: Workspace
+  - name: RTC
+paths:
+  /healthz:
+    get:
+      tags: [Health]
+      operationId: healthz
+      responses:
+        "200":
+          description: Service is alive
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: ok
+
+  /readyz:
+    get:
+      tags: [Health]
+      operationId: readyz
+      responses:
+        "200":
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessResponse"
+        "503":
+          description: Service is not ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessErrorResponse"
+
+  /api/v1/auth/register:
+    post:
+      tags: [Auth]
+      operationId: authRegister
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: Registered and authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      operationId: authLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      operationId: authRefresh
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "200":
+          description: Tokens refreshed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      operationId: authLogout
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LogoutRequest"
+      responses:
+        "204":
+          description: Logged out
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/auth/me:
+    get:
+      tags: [Auth]
+      operationId: authMe
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/workspaces:
+    post:
+      tags: [Workspace]
+      operationId: createWorkspace
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/XCorrelationID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorkspaceRequest"
+      responses:
+        "202":
+          description: Command accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateWorkspaceAccepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/workspaces/{workspace_id}:
+    get:
+      tags: [Workspace]
+      operationId: getWorkspace
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceID"
+      responses:
+        "200":
+          description: Workspace projection
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/workspaces/{workspace_id}/channels:
+    post:
+      tags: [Workspace]
+      operationId: createChannel
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceID"
+        - $ref: "#/components/parameters/XCorrelationID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateChannelRequest"
+      responses:
+        "202":
+          description: Command accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateChannelAccepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/workspaces/{workspace_id}/channels/{channel_id}:
+    get:
+      tags: [Workspace]
+      operationId: getChannel
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceID"
+        - $ref: "#/components/parameters/ChannelID"
+      responses:
+        "200":
+          description: Channel projection
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChannelView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/workspaces/{workspace_id}/members/{user_id}/join:
+    post:
+      tags: [Workspace]
+      operationId: joinWorkspace
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceID"
+        - $ref: "#/components/parameters/UserID"
+        - $ref: "#/components/parameters/XCorrelationID"
+      responses:
+        "202":
+          description: Command accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JoinWorkspaceAccepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/workspaces/{workspace_id}/channels/{channel_id}/voice/join:
+    post:
+      tags: [RTC]
+      operationId: rtcJoinVoice
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceID"
+        - $ref: "#/components/parameters/ChannelID"
+        - $ref: "#/components/parameters/XCorrelationID"
+      responses:
+        "202":
+          $ref: "#/components/responses/CommandAccepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/workspaces/{workspace_id}/channels/{channel_id}/voice/leave:
+    post:
+      tags: [RTC]
+      operationId: rtcLeaveVoice
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceID"
+        - $ref: "#/components/parameters/ChannelID"
+        - $ref: "#/components/parameters/XCorrelationID"
+      responses:
+        "202":
+          $ref: "#/components/responses/CommandAccepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/workspaces/{workspace_id}/channels/{channel_id}/voice/mute:
+    post:
+      tags: [RTC]
+      operationId: rtcMuteSelf
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceID"
+        - $ref: "#/components/parameters/ChannelID"
+        - $ref: "#/components/parameters/XCorrelationID"
+      responses:
+        "202":
+          $ref: "#/components/responses/CommandAccepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/workspaces/{workspace_id}/channels/{channel_id}/voice/unmute:
+    post:
+      tags: [RTC]
+      operationId: rtcUnmuteSelf
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceID"
+        - $ref: "#/components/parameters/ChannelID"
+        - $ref: "#/components/parameters/XCorrelationID"
+      responses:
+        "202":
+          $ref: "#/components/responses/CommandAccepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/workspaces/{workspace_id}/channels/{channel_id}/voice/camera/enable:
+    post:
+      tags: [RTC]
+      operationId: rtcEnableCamera
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceID"
+        - $ref: "#/components/parameters/ChannelID"
+        - $ref: "#/components/parameters/XCorrelationID"
+      responses:
+        "202":
+          $ref: "#/components/responses/CommandAccepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/workspaces/{workspace_id}/channels/{channel_id}/voice/camera/disable:
+    post:
+      tags: [RTC]
+      operationId: rtcDisableCamera
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceID"
+        - $ref: "#/components/parameters/ChannelID"
+        - $ref: "#/components/parameters/XCorrelationID"
+      responses:
+        "202":
+          $ref: "#/components/responses/CommandAccepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/workspaces/{workspace_id}/channels/{channel_id}/voice/token:
+    post:
+      tags: [RTC]
+      operationId: rtcIssueToken
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceID"
+        - $ref: "#/components/parameters/ChannelID"
+        - $ref: "#/components/parameters/XCorrelationID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IssueRtcTokenRequest"
+      responses:
+        "202":
+          $ref: "#/components/responses/CommandAccepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/workspaces/{workspace_id}/channels/{channel_id}/voice/state:
+    get:
+      tags: [RTC]
+      operationId: rtcGetVoiceState
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceID"
+        - $ref: "#/components/parameters/ChannelID"
+      responses:
+        "200":
+          description: Voice room state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetVoiceRoomStateResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+        "504":
+          $ref: "#/components/responses/GatewayTimeout"
+
+  /api/v1/workspaces/{workspace_id}/channels/{channel_id}/voice/binding:
+    get:
+      tags: [RTC]
+      operationId: rtcGetVoiceBinding
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceID"
+        - $ref: "#/components/parameters/ChannelID"
+      responses:
+        "200":
+          description: Voice channel binding
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetVoiceChannelBindingResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+        "504":
+          $ref: "#/components/responses/GatewayTimeout"
+
+  /api/v1/rtc/rooms/{room_id}/participants:
+    get:
+      tags: [RTC]
+      operationId: rtcListParticipants
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/RoomID"
+      responses:
+        "200":
+          description: Voice participants list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListVoiceParticipantsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+        "504":
+          $ref: "#/components/responses/GatewayTimeout"
+
+  /api/v1/rtc/token-grants/{token_id}:
+    get:
+      tags: [RTC]
+      operationId: rtcGetTokenGrantStatus
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TokenID"
+      responses:
+        "200":
+          description: RTC token status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetRtcTokenGrantStatusResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+        "504":
+          $ref: "#/components/responses/GatewayTimeout"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    XCorrelationID:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Optional correlation id propagated into command meta.
+    WorkspaceID:
+      name: workspace_id
+      in: path
+      required: true
+      schema:
+        type: string
+    ChannelID:
+      name: channel_id
+      in: path
+      required: true
+      schema:
+        type: string
+    UserID:
+      name: user_id
+      in: path
+      required: true
+      schema:
+        type: string
+    RoomID:
+      name: room_id
+      in: path
+      required: true
+      schema:
+        type: string
+    TokenID:
+      name: token_id
+      in: path
+      required: true
+      schema:
+        type: string
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Conflict:
+      description: Conflict / failed precondition
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    BadGateway:
+      description: Upstream RPC/transport error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    GatewayTimeout:
+      description: Upstream timeout
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    CommandAccepted:
+      description: Asynchronous command accepted
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/CommandAccepted"
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    ReadinessResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ready
+
+    ReadinessErrorResponse:
+      allOf:
+        - $ref: "#/components/schemas/ReadinessResponse"
+        - type: object
+          properties:
+            error:
+              type: string
+
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 1
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 1
+
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
+
+    LogoutRequest:
+      type: object
+      properties:
+        refresh_token:
+          type: string
+
+    AuthResult:
+      type: object
+      required:
+        - account_id
+        - email
+        - session_id
+        - access_token
+        - refresh_token
+        - access_token_expires_at
+        - refresh_token_expires_at
+      properties:
+        account_id:
+          type: string
+        email:
+          type: string
+          format: email
+        session_id:
+          type: string
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        access_token_expires_at:
+          type: string
+          format: date-time
+        refresh_token_expires_at:
+          type: string
+          format: date-time
+
+    MeResult:
+      type: object
+      required: [account_id, email]
+      properties:
+        account_id:
+          type: string
+        email:
+          type: string
+          format: email
+
+    CommandAccepted:
+      type: object
+      required: [command_id, correlation_id]
+      properties:
+        command_id:
+          type: string
+        correlation_id:
+          type: string
+
+    CreateWorkspaceRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+
+    CreateWorkspaceAccepted:
+      allOf:
+        - $ref: "#/components/schemas/CommandAccepted"
+        - type: object
+          required: [workspace_id]
+          properties:
+            workspace_id:
+              type: string
+
+    CreateChannelRequest:
+      type: object
+      required: [name, kind]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        kind:
+          type: string
+          enum: [text, voice]
+
+    CreateChannelAccepted:
+      allOf:
+        - $ref: "#/components/schemas/CommandAccepted"
+        - type: object
+          required: [workspace_id, channel_id]
+          properties:
+            workspace_id:
+              type: string
+            channel_id:
+              type: string
+
+    JoinWorkspaceAccepted:
+      allOf:
+        - $ref: "#/components/schemas/CommandAccepted"
+        - type: object
+          required: [workspace_id, user_id]
+          properties:
+            workspace_id:
+              type: string
+            user_id:
+              type: string
+
+    WorkspaceView:
+      type: object
+      required: [id, name, owner_id, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        owner_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ChannelView:
+      type: object
+      required: [workspace_id, id, name, kind, created_at, updated_at]
+      properties:
+        workspace_id:
+          type: string
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [text, voice]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    IssueRtcTokenRequest:
+      type: object
+      required: [ttl_seconds, can_publish, can_subscribe]
+      properties:
+        ttl_seconds:
+          type: integer
+          format: int64
+          minimum: 0
+        can_publish:
+          type: boolean
+        can_subscribe:
+          type: boolean
+
+    GetVoiceRoomStateResponse:
+      type: object
+      properties:
+        state:
+          $ref: "#/components/schemas/VoiceRoomState"
+
+    VoiceRoomState:
+      type: object
+      properties:
+        room_id:
+          type: string
+        workspace_id:
+          type: string
+        channel_id:
+          type: string
+        active:
+          type: boolean
+        participant_count:
+          type: integer
+          format: int32
+        last_state_change_at:
+          type: string
+          format: date-time
+
+    ListVoiceParticipantsResponse:
+      type: object
+      properties:
+        participants:
+          type: array
+          items:
+            $ref: "#/components/schemas/VoiceParticipant"
+
+    VoiceParticipant:
+      type: object
+      properties:
+        user_id:
+          type: string
+        joined_at:
+          type: string
+          format: date-time
+        left_at:
+          type: string
+          format: date-time
+          nullable: true
+        microphone_muted:
+          type: boolean
+        camera_enabled:
+          type: boolean
+
+    GetVoiceChannelBindingResponse:
+      type: object
+      properties:
+        binding:
+          $ref: "#/components/schemas/VoiceChannelBinding"
+
+    VoiceChannelBinding:
+      type: object
+      properties:
+        workspace_id:
+          type: string
+        channel_id:
+          type: string
+        room_id:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+
+    GetRtcTokenGrantStatusResponse:
+      type: object
+      properties:
+        status:
+          $ref: "#/components/schemas/RtcTokenGrantStatus"
+
+    RtcTokenGrantStatus:
+      type: object
+      properties:
+        token_id:
+          type: string
+        room_id:
+          type: string
+        user_id:
+          type: string
+        issued_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        expired:
+          type: boolean
+        can_publish:
+          type: boolean
+        can_subscribe:
+          type: boolean
