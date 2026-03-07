@@ -6,10 +6,11 @@
 
 1. Workspace consumer: poison-команда может стопорить partition
 - Где: `internal/workspace/infrastructure/in/kafka/command_consumer/consumer.go`
-- Проблема: при `dispatch` error сообщение не ack'ается, bounded retry/DLQ отсутствуют.
-- Риск: consumer group может застрять на одном сообщении.
-- Что сделать: добавить стратегию как в RTC (`retry + DLQ + ack только после success или successful DLQ publish`).
-- Статус: `open`
+- Что сделано:
+  - Вынесен reusable раннер `poll -> dispatch -> retry -> DLQ -> ack` в `pkg/consumer/runner.go`.
+  - Подключён в RTC и Workspace consumer.
+  - Для workspace добавлены `ConsumerOptions`, `DeadLetterMessage`, `CommandDLQPublisher`, новые config/env поля и wiring в core DI.
+- Статус: `done`
 
 ## Part B - High Priority (P2)
 
@@ -31,7 +32,10 @@
 - Что сделано:
   - `internal/core/infrastructure/out/kafka/producer/producer_test.go`
   - `internal/core/infrastructure/out/grpc/clients/rtcquery/client_test.go`
+  - `pkg/consumer/runner_test.go`
+  - `internal/workspace/infrastructure/in/kafka/command_consumer/consumer_test.go`
   - `internal/workspace/infrastructure/in/kafka/command_consumer/kafka_reader_test.go`
+  - `internal/workspace/infrastructure/out/kafka/event_publisher/command_dlq_publisher_test.go`
   - `internal/workspace/infrastructure/out/kafka/event_publisher/publisher_test.go`
   - `internal/workspace/infrastructure/out/kafka/event_publisher/outbox_relay_test.go`
   - `internal/core/infrastructure/in/http/handlers/workspace/handler_test.go`

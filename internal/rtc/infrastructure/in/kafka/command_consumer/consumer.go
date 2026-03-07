@@ -3,7 +3,6 @@ package commandconsumer
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/c4erries/mint/internal/rtc/application"
 	"github.com/c4erries/mint/internal/rtc/domain"
+	consumerrunner "github.com/c4erries/mint/pkg/consumer"
 )
 
 // Message is a minimal Kafka message abstraction.
@@ -45,11 +45,8 @@ func (NoopReader) Close() error {
 
 // Consumer parses Kafka envelopes and dispatches RTC commands to application layer.
 type Consumer struct {
-	reader      Reader
-	commands    *application.CommandService
-	deadLetters DeadLetterPublisher
-	logger      *slog.Logger
-	options     ConsumerOptions
+	commands *application.CommandService
+	runner   *consumerrunner.Runner[Message, *DeadLetterMessage]
 }
 
 func New(
@@ -63,13 +60,34 @@ func New(
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 
-	return &Consumer{
-		reader:      reader,
-		commands:    commands,
-		deadLetters: deadLetters,
-		logger:      logger,
-		options:     options.withDefaults(),
+	consumerOptions := options.withDefaults()
+	consumer := &Consumer{
+		commands: commands,
 	}
+
+	consumer.runner = consumerrunner.NewRunner(
+		reader,
+		consumer.dispatch,
+		func(message Message, dispatchErr error, attempts int, failedAt time.Time) *DeadLetterMessage {
+			return buildDeadLetterMessage(message, dispatchErr, attempts, failedAt)
+		},
+		func(ctx context.Context, message *DeadLetterMessage) error {
+			if deadLetters == nil {
+				return fmt.Errorf("dead letter publisher is not configured")
+			}
+
+			return deadLetters.Publish(ctx, message)
+		},
+		consumerrunner.Options{
+			MaxDispatchAttempts: consumerOptions.MaxDispatchAttempts,
+			RetryBackoff:        consumerOptions.RetryBackoff,
+			Now:                 consumerOptions.Now,
+			Logger:              logger,
+			Name:                "rtc command",
+		},
+	)
+
+	return consumer
 }
 
 func (c *Consumer) Run(ctx context.Context) error {
@@ -77,87 +95,11 @@ func (c *Consumer) Run(ctx context.Context) error {
 		return nil
 	}
 
-	if c.reader == nil {
-		return fmt.Errorf("command reader is not configured")
+	if c.runner == nil {
+		return fmt.Errorf("rtc command consumer runner is not configured")
 	}
 
-	for {
-		message, err := c.reader.Poll(ctx)
-		if err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return nil
-			}
-
-			c.logger.Error("failed to poll rtc command", slog.String("error", err.Error()))
-
-			continue
-		}
-
-		shouldAck, err := c.processMessage(ctx, message)
-		if err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return nil
-			}
-
-			c.logger.Error("failed to process rtc command", slog.String("error", err.Error()))
-		}
-
-		if !shouldAck {
-			continue
-		}
-
-		if err = c.reader.Ack(ctx, message); err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return nil
-			}
-
-			c.logger.Error("failed to ack rtc command", slog.String("error", err.Error()))
-		}
-	}
-}
-
-func (c *Consumer) processMessage(ctx context.Context, message Message) (bool, error) {
-	var dispatchErr error
-
-	for attempt := 1; attempt <= c.options.MaxDispatchAttempts; attempt++ {
-		dispatchErr = c.dispatch(ctx, message)
-		if dispatchErr == nil {
-			return true, nil
-		}
-
-		if attempt == c.options.MaxDispatchAttempts {
-			break
-		}
-
-		c.logger.Warn(
-			"dispatch rtc command failed, retrying",
-			slog.Int("attempt", attempt),
-			slog.Int("max_attempts", c.options.MaxDispatchAttempts),
-			slog.String("error", dispatchErr.Error()),
-		)
-
-		if err := waitForRetry(ctx, c.options.RetryBackoff); err != nil {
-			return false, err
-		}
-	}
-
-	if c.deadLetters == nil {
-		return false, fmt.Errorf("dead letter publisher is not configured: %w", dispatchErr)
-	}
-
-	dlqMessage := buildDeadLetterMessage(message, dispatchErr, c.options.MaxDispatchAttempts, c.options.Now())
-	if err := c.deadLetters.Publish(ctx, dlqMessage); err != nil {
-		return false, fmt.Errorf("publish rtc command to dlq: %w", err)
-	}
-
-	c.logger.Error(
-		"rtc command moved to dlq",
-		slog.String("reason", dlqMessage.Reason),
-		slog.Int("attempts", dlqMessage.Attempts),
-		slog.String("command_type", dlqMessage.CommandType),
-	)
-
-	return true, nil
+	return c.runner.Run(ctx)
 }
 
 type envelope struct {

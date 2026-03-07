@@ -3,13 +3,14 @@ package commandconsumer
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"time"
 
 	"github.com/c4erries/mint/internal/workspace/application"
 	"github.com/c4erries/mint/internal/workspace/domain"
+	consumerrunner "github.com/c4erries/mint/pkg/consumer"
 )
 
 // Message is a minimal kafka message abstraction.
@@ -28,17 +29,49 @@ type Reader interface {
 
 // Consumer dispatches workspace commands to application layer.
 type Consumer struct {
-	reader   Reader
 	commands *application.CommandService
-	logger   *slog.Logger
+	runner   *consumerrunner.Runner[Message, *DeadLetterMessage]
 }
 
-func New(reader Reader, commands *application.CommandService, logger *slog.Logger) *Consumer {
+func New(
+	reader Reader,
+	commands *application.CommandService,
+	deadLetters DeadLetterPublisher,
+	logger *slog.Logger,
+	options ConsumerOptions,
+) *Consumer {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 
-	return &Consumer{reader: reader, commands: commands, logger: logger}
+	consumerOptions := options.withDefaults()
+	consumer := &Consumer{
+		commands: commands,
+	}
+
+	consumer.runner = consumerrunner.NewRunner(
+		reader,
+		consumer.dispatch,
+		func(message Message, dispatchErr error, attempts int, failedAt time.Time) *DeadLetterMessage {
+			return buildDeadLetterMessage(message, dispatchErr, attempts, failedAt)
+		},
+		func(ctx context.Context, message *DeadLetterMessage) error {
+			if deadLetters == nil {
+				return fmt.Errorf("workspace dead letter publisher is not configured")
+			}
+
+			return deadLetters.Publish(ctx, message)
+		},
+		consumerrunner.Options{
+			MaxDispatchAttempts: consumerOptions.MaxDispatchAttempts,
+			RetryBackoff:        consumerOptions.RetryBackoff,
+			Now:                 consumerOptions.Now,
+			Logger:              logger,
+			Name:                "workspace command",
+		},
+	)
+
+	return consumer
 }
 
 func (c *Consumer) Run(ctx context.Context) error {
@@ -46,35 +79,11 @@ func (c *Consumer) Run(ctx context.Context) error {
 		return nil
 	}
 
-	if c.reader == nil {
-		return fmt.Errorf("workspace command reader is not configured")
+	if c.runner == nil {
+		return fmt.Errorf("workspace command consumer runner is not configured")
 	}
 
-	for {
-		message, err := c.reader.Poll(ctx)
-		if err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return nil
-			}
-
-			c.logger.Error("failed to poll workspace command", slog.String("error", err.Error()))
-
-			continue
-		}
-
-		if err = c.dispatch(ctx, message); err != nil {
-			c.logger.Error("failed to dispatch workspace command", slog.String("error", err.Error()))
-			continue
-		}
-
-		if err = c.reader.Ack(ctx, message); err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return nil
-			}
-
-			c.logger.Error("failed to ack workspace command", slog.String("error", err.Error()))
-		}
-	}
+	return c.runner.Run(ctx)
 }
 
 type envelope struct {

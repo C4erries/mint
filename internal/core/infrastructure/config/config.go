@@ -9,6 +9,9 @@ const (
 	defaultKafkaBrokers           = "127.0.0.1:9092"
 	defaultRTCCommandsTopic       = "mint.rtc.commands.v1"
 	defaultWorkspaceCommandsTopic = "mint.workspace.commands.v1"
+	defaultWorkspaceCommandsDLQ   = "mint.workspace.commands.dlq.v1"
+	defaultWorkspaceCmdMaxRetries = 3
+	defaultWorkspaceCmdBackoff    = 200 * time.Millisecond
 	defaultWorkspaceEventsTopic   = "mint.workspace.events.v1"
 	defaultWorkspaceConsumerGroup = "mint.core.workspace.v1"
 	defaultOutboxPollInterval     = 2 * time.Second
@@ -38,13 +41,16 @@ type Config struct {
 	GRPCAddr            string
 	ShutdownGracePeriod time.Duration
 
-	KafkaBrokers           []string
-	RTCCommandsTopic       string
-	WorkspaceCommandsTopic string
-	WorkspaceEventsTopic   string
-	WorkspaceConsumerGroup string
-	OutboxPollInterval     time.Duration
-	OutboxBatchSize        int
+	KafkaBrokers                 []string
+	RTCCommandsTopic             string
+	WorkspaceCommandsTopic       string
+	WorkspaceCommandsDLQ         string
+	WorkspaceCommandMaxAttempts  int
+	WorkspaceCommandRetryBackoff time.Duration
+	WorkspaceEventsTopic         string
+	WorkspaceConsumerGroup       string
+	OutboxPollInterval           time.Duration
+	OutboxBatchSize              int
 
 	RedisAddr      string
 	RedisPassword  string
@@ -71,33 +77,36 @@ type Config struct {
 
 func Default() Config {
 	return Config{
-		HTTPAddr:               defaultHTTPAddr,
-		GRPCAddr:               defaultGRPCAddr,
-		ShutdownGracePeriod:    defaultShutdownGracePeriod,
-		KafkaBrokers:           splitCSV(defaultKafkaBrokers),
-		RTCCommandsTopic:       defaultRTCCommandsTopic,
-		WorkspaceCommandsTopic: defaultWorkspaceCommandsTopic,
-		WorkspaceEventsTopic:   defaultWorkspaceEventsTopic,
-		WorkspaceConsumerGroup: defaultWorkspaceConsumerGroup,
-		OutboxPollInterval:     defaultOutboxPollInterval,
-		OutboxBatchSize:        defaultOutboxBatchSize,
-		RedisAddr:              defaultRedisAddr,
-		RedisDB:                defaultRedisDB,
-		RedisKeyPrefix:         defaultRedisKeyPrefix,
-		ScyllaHosts:            splitCSV(defaultScyllaHosts),
-		ScyllaPort:             defaultScyllaPort,
-		ScyllaKeyspace:         defaultScyllaKeyspace,
-		ScyllaConsistency:      defaultScyllaConsistency,
-		ScyllaAutoCreateSchema: defaultScyllaAutoCreateSchema,
-		JWTAccessSecret:        defaultJWTAccessSecret,
-		JWTRefreshSecret:       defaultJWTRefreshSecret,
-		JWTAccessTTL:           defaultJWTAccessTTL,
-		JWTRefreshTTL:          defaultJWTRefreshTTL,
-		RTCGRPCAddr:            defaultRTCGRPCAddr,
-		RTCGRPCTimeout:         defaultRTCGRPCTimeout,
-		RTCGRPCMaxRetries:      defaultRTCGRPCMaxRetries,
-		RTCGRPCRetryBackoff:    defaultRTCGRPCRetryBackoff,
-		TrustedProxies:         splitCSV(defaultTrustedProxies),
+		HTTPAddr:                     defaultHTTPAddr,
+		GRPCAddr:                     defaultGRPCAddr,
+		ShutdownGracePeriod:          defaultShutdownGracePeriod,
+		KafkaBrokers:                 splitCSV(defaultKafkaBrokers),
+		RTCCommandsTopic:             defaultRTCCommandsTopic,
+		WorkspaceCommandsTopic:       defaultWorkspaceCommandsTopic,
+		WorkspaceCommandsDLQ:         defaultWorkspaceCommandsDLQ,
+		WorkspaceCommandMaxAttempts:  defaultWorkspaceCmdMaxRetries,
+		WorkspaceCommandRetryBackoff: defaultWorkspaceCmdBackoff,
+		WorkspaceEventsTopic:         defaultWorkspaceEventsTopic,
+		WorkspaceConsumerGroup:       defaultWorkspaceConsumerGroup,
+		OutboxPollInterval:           defaultOutboxPollInterval,
+		OutboxBatchSize:              defaultOutboxBatchSize,
+		RedisAddr:                    defaultRedisAddr,
+		RedisDB:                      defaultRedisDB,
+		RedisKeyPrefix:               defaultRedisKeyPrefix,
+		ScyllaHosts:                  splitCSV(defaultScyllaHosts),
+		ScyllaPort:                   defaultScyllaPort,
+		ScyllaKeyspace:               defaultScyllaKeyspace,
+		ScyllaConsistency:            defaultScyllaConsistency,
+		ScyllaAutoCreateSchema:       defaultScyllaAutoCreateSchema,
+		JWTAccessSecret:              defaultJWTAccessSecret,
+		JWTRefreshSecret:             defaultJWTRefreshSecret,
+		JWTAccessTTL:                 defaultJWTAccessTTL,
+		JWTRefreshTTL:                defaultJWTRefreshTTL,
+		RTCGRPCAddr:                  defaultRTCGRPCAddr,
+		RTCGRPCTimeout:               defaultRTCGRPCTimeout,
+		RTCGRPCMaxRetries:            defaultRTCGRPCMaxRetries,
+		RTCGRPCRetryBackoff:          defaultRTCGRPCRetryBackoff,
+		TrustedProxies:               splitCSV(defaultTrustedProxies),
 	}
 }
 
@@ -117,8 +126,23 @@ func LoadFromEnv() (Config, error) {
 	cfg.KafkaBrokers = csvEnvOrDefault("MINT_KAFKA_BROKERS", cfg.KafkaBrokers)
 	cfg.RTCCommandsTopic = stringEnvOrDefault("MINT_RTC_COMMANDS_TOPIC", cfg.RTCCommandsTopic)
 	cfg.WorkspaceCommandsTopic = stringEnvOrDefault("MINT_CORE_WORKSPACE_COMMANDS_TOPIC", cfg.WorkspaceCommandsTopic)
+	cfg.WorkspaceCommandsDLQ = stringEnvOrDefault("MINT_CORE_WORKSPACE_COMMANDS_DLQ_TOPIC", cfg.WorkspaceCommandsDLQ)
 	cfg.WorkspaceEventsTopic = stringEnvOrDefault("MINT_CORE_WORKSPACE_EVENTS_TOPIC", cfg.WorkspaceEventsTopic)
 	cfg.WorkspaceConsumerGroup = stringEnvOrDefault("MINT_CORE_WORKSPACE_CONSUMER_GROUP", cfg.WorkspaceConsumerGroup)
+
+	workspaceCommandMaxAttempts, err := intEnvOrDefault("MINT_CORE_WORKSPACE_COMMAND_MAX_DISPATCH_ATTEMPTS", cfg.WorkspaceCommandMaxAttempts)
+	if err != nil {
+		return Config{}, err
+	}
+
+	cfg.WorkspaceCommandMaxAttempts = workspaceCommandMaxAttempts
+
+	workspaceCommandRetryBackoff, err := durationEnvOrDefault("MINT_CORE_WORKSPACE_COMMAND_RETRY_BACKOFF", cfg.WorkspaceCommandRetryBackoff)
+	if err != nil {
+		return Config{}, err
+	}
+
+	cfg.WorkspaceCommandRetryBackoff = workspaceCommandRetryBackoff
 
 	outboxPollInterval, err := durationEnvOrDefault("MINT_CORE_OUTBOX_POLL_INTERVAL", cfg.OutboxPollInterval)
 	if err != nil {

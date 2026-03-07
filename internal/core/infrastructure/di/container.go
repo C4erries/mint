@@ -262,6 +262,11 @@ func buildWorkspaceRuntime(
 		return nil, nil, fmt.Errorf("build workspace outbox relay: %w", err)
 	}
 
+	commandDLQPublisher, err := workspacepublisher.NewCommandDLQPublisher(kafkaProducer, cfg.WorkspaceCommandsDLQ)
+	if err != nil {
+		return nil, nil, fmt.Errorf("build workspace command dlq publisher: %w", err)
+	}
+
 	workspaceReader, err := workspaceconsumer.NewKafkaReader(workspaceconsumer.KafkaReaderConfig{
 		Brokers:        cfg.KafkaBrokers,
 		Topic:          cfg.WorkspaceCommandsTopic,
@@ -274,7 +279,17 @@ func buildWorkspaceRuntime(
 
 	closers.Add(workspaceReader)
 
-	consumer := workspaceconsumer.New(workspaceReader, workspaceDeps.commandService, logger)
+	consumer := workspaceconsumer.New(
+		workspaceReader,
+		workspaceDeps.commandService,
+		commandDLQPublisher,
+		logger,
+		workspaceconsumer.ConsumerOptions{
+			MaxDispatchAttempts: cfg.WorkspaceCommandMaxAttempts,
+			RetryBackoff:        cfg.WorkspaceCommandRetryBackoff,
+			Now:                 time.Now,
+		},
+	)
 
 	return outboxRelay, consumer, nil
 }

@@ -30,12 +30,24 @@ func validateConfig(cfg Config) error {
 		return fmt.Errorf("MINT_CORE_WORKSPACE_COMMANDS_TOPIC must not be empty")
 	}
 
+	if strings.TrimSpace(cfg.WorkspaceCommandsDLQ) == "" {
+		return fmt.Errorf("MINT_CORE_WORKSPACE_COMMANDS_DLQ_TOPIC must not be empty")
+	}
+
 	if strings.TrimSpace(cfg.WorkspaceEventsTopic) == "" {
 		return fmt.Errorf("MINT_CORE_WORKSPACE_EVENTS_TOPIC must not be empty")
 	}
 
 	if strings.TrimSpace(cfg.WorkspaceConsumerGroup) == "" {
 		return fmt.Errorf("MINT_CORE_WORKSPACE_CONSUMER_GROUP must not be empty")
+	}
+
+	if cfg.WorkspaceCommandMaxAttempts <= 0 {
+		return fmt.Errorf("MINT_CORE_WORKSPACE_COMMAND_MAX_DISPATCH_ATTEMPTS must be > 0")
+	}
+
+	if cfg.WorkspaceCommandRetryBackoff <= 0 {
+		return fmt.Errorf("MINT_CORE_WORKSPACE_COMMAND_RETRY_BACKOFF must be > 0")
 	}
 
 	if cfg.OutboxPollInterval <= 0 {

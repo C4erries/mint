@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/c4erries/mint/internal/rtc/application"
+	"github.com/c4erries/mint/internal/workspace/application"
 )
 
 const (
@@ -14,19 +14,19 @@ const (
 	defaultRetryBackoff        = 200 * time.Millisecond
 )
 
-// ConsumerOptions configures retry and dead-letter behavior for command handling.
+// ConsumerOptions configures retry and dead-letter behavior for workspace command handling.
 type ConsumerOptions struct {
 	MaxDispatchAttempts int
 	RetryBackoff        time.Duration
 	Now                 func() time.Time
 }
 
-// DeadLetterPublisher stores poison commands that exceeded retry policy.
+// DeadLetterPublisher stores poison workspace commands that exceeded retry policy.
 type DeadLetterPublisher interface {
 	Publish(ctx context.Context, message *DeadLetterMessage) error
 }
 
-// DeadLetterMessage captures failed command with metadata for later inspection/replay.
+// DeadLetterMessage captures failed workspace command with metadata for replay/inspection.
 type DeadLetterMessage struct {
 	FailedAt        time.Time                `json:"failed_at"`
 	Attempts        int                      `json:"attempts"`
